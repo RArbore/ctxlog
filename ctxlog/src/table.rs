@@ -133,7 +133,7 @@ impl Table {
         row
     }
 
-    pub fn rows(&self) -> impl Iterator<Item = (&[Value], RowId)> + '_ {
+    pub fn rows(&self) -> impl Iterator<Item = &[Value]> + '_ {
         TableRows {
             table: self,
             row: 0,
@@ -147,7 +147,7 @@ impl Table {
 }
 
 impl<'a> Iterator for TableRows<'a> {
-    type Item = (&'a [Value], RowId);
+    type Item = &'a [Value];
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(recent_deleted) = self.deleted_iter.peek() {
@@ -164,7 +164,7 @@ impl<'a> Iterator for TableRows<'a> {
         } else {
             let row = self.row;
             self.row += 1;
-            Some((self.table.rows.get_row(row), row))
+            Some(self.table.rows.get_row(row))
         }
     }
 }
