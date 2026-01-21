@@ -15,10 +15,6 @@ pub fn leq(a: Provenance, b: Provenance) -> bool {
     (!a & b) == 0
 }
 
-pub fn factor(a: Provenance, b: Provenance) -> Option<Provenance> {
-    if leq(b, a) {
-        Some(!a & b)
-    } else {
-        None
-    }
+pub fn factor(a: Provenance, b: Provenance) -> Provenance {
+    !a & b
 }
