@@ -10,9 +10,9 @@ mod tests {
         let mut c = Table::new(3);
         let mut merge = |_, _| 0;
 
-        a.insert(&[1, make_provenance(0), 0], &mut merge);
-        a.insert(&[2, make_provenance(1), 0], &mut merge);
-        a.insert(&[3, make_provenance(2), 0], &mut merge);
+        a.insert(&[1, mk_prov(0), 0], &mut merge);
+        a.insert(&[2, mk_prov(1), 0], &mut merge);
+        a.insert(&[3, mk_prov(2), 0], &mut merge);
 
         for (row1, _) in a.rows() {
             b.insert(&[row1[0], row1[0], row1[1], 0], &mut merge);
@@ -28,20 +28,20 @@ mod tests {
 
         for (row, _) in c.rows() {
             b.insert(
-                &[row[0], row[1], factor(make_provenance(1), row[2]), 0],
+                &[row[0], row[1], factor(mk_prov(1), row[2]), 0],
                 &mut merge,
             );
         }
         assert_eq!(b.num_rows(), 10);
 
-        assert!(b.get(&[3, 2, make_provenance(2)]).is_some());
+        assert!(b.get(&[3, 2, mk_prov(2)]).is_some());
 
-        assert!(b.get(&[2, 2, 0]).is_some());
-        assert!(b.get(&[2, 2, make_provenance(0)]).is_none());
-        assert!(b.get(&[2, 2, make_provenance(1)]).is_some());
-        assert!(b.get(&[2, 2, make_provenance(2)]).is_none());
+        assert!(b.get(&[2, 2, root_prov()]).is_some());
+        assert!(b.get(&[2, 2, mk_prov(0)]).is_none());
+        assert!(b.get(&[2, 2, mk_prov(1)]).is_some());
+        assert!(b.get(&[2, 2, mk_prov(2)]).is_none());
 
-        assert!(b.get(&[1, 3, joint_use(make_provenance(0), make_provenance(2))]).is_some());
-        assert!(b.get(&[3, 1, joint_use(make_provenance(0), make_provenance(2))]).is_some());
+        assert!(b.get(&[1, 3, joint_use(mk_prov(0), mk_prov(2))]).is_some());
+        assert!(b.get(&[3, 1, joint_use(mk_prov(0), mk_prov(2))]).is_some());
     }
 }

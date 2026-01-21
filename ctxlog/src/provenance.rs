@@ -2,9 +2,13 @@ use crate::table::Value;
 
 pub type Provenance = Value;
 
-pub fn make_provenance(id: u32) -> Provenance {
+pub fn mk_prov(id: u32) -> Provenance {
     assert!((id as usize) < size_of::<Provenance>() * 8);
     1 << id
+}
+
+pub fn root_prov() -> Provenance {
+    0
 }
 
 pub fn joint_use(a: Provenance, b: Provenance) -> Provenance {
