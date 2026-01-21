@@ -25,9 +25,11 @@ mod tests {
         for row in c.rows() {
             if let Some(factor) = factor(make_provenance(1), row[2]) {
                 b.insert(&[row[0], row[1], factor]);
+            } else {
+                b.insert(row);
             }
         }
-        assert_eq!(b.num_rows(), 8);
+        assert_eq!(b.num_rows(), 10);
 
         assert!(b.probe(&[3, 2, make_provenance(2)]).is_some());
 
