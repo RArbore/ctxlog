@@ -2,27 +2,7 @@ use core::cmp::{max, min};
 
 use crate::interner::Interner;
 use crate::table::Value;
-
-#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
-pub enum UnaryOp {
-    Negate,
-    Not,
-}
-
-#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
-pub enum BinaryOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Rem,
-    EE,
-    NE,
-    LT,
-    LE,
-    GT,
-    GE,
-}
+use crate::term::{BinaryOp, UnaryOp};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Interval {

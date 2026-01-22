@@ -1,0 +1,21 @@
+fn basic() {
+	x = 5;
+	y = x + 7;
+	z = x + 7;
+	return y + z;
+}
+
+fn branch(x) {
+	if x {
+		x = 0;
+	}
+	return x + 7;
+}
+
+fn loop(x) {
+	y = 7;
+	while x > 0 {
+		x = x - 1;
+	}
+	return x - y;
+}

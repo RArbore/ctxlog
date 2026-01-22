@@ -1,0 +1,35 @@
+fn bad_phi() {
+	x = 42;
+	while 1 {
+		if 1 {}
+		x = x + 1;
+	}
+	return x;
+}
+
+fn mul_one() {
+	x = 5;
+	y = 3;
+	z = 1 * x;
+	w = 1 * y;
+	return x == y;
+}
+
+fn inc_dec() {
+        x = 5;
+	y = 3;
+	xs = x + 1;
+	xsd = xs - 1;
+	ys = y + 1;
+	ysd = ys - 1;
+	return xsd == ysd;
+}
+
+fn add_sub(x) {
+	while 1 {
+		y = x + 7;
+		z = y - 3;
+		x = z - 4;
+	}
+	return x;
+}

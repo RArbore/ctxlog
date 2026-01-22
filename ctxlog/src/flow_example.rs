@@ -1,8 +1,9 @@
 #[cfg(test)]
 mod tests {
-    use crate::lattice::{IsZero, UnaryOp};
+    use crate::lattice::IsZero;
     use crate::provenance::*;
     use crate::table::{Table, Value};
+    use crate::term::UnaryOp;
 
     #[test]
     fn flow_example() {
