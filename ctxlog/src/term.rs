@@ -1,5 +1,5 @@
 use core::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Result, Write};
 
 use string_interner::Symbol as _;
@@ -16,6 +16,7 @@ pub enum Term {
     Phi(BlockId, TermId, TermId),
     Unary(UnaryOp, TermId),
     Binary(BinaryOp, TermId, TermId),
+    Tombstone,
 }
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
@@ -54,6 +55,7 @@ pub struct SSA {
     pub terms: Vec<Term>,
     pub intern: BTreeMap<Term, TermId>,
     pub cfg: CFG,
+    pub roots: BTreeSet<TermId>,
 }
 
 impl Term {
@@ -64,6 +66,7 @@ impl Term {
             Term::Phi(_, _, _) => "Φ".to_string(),
             Term::Unary(op, _) => format!("{:?}", op),
             Term::Binary(op, _, _) => format!("{:?}", op),
+            Term::Tombstone => panic!(),
         }
     }
 }
@@ -81,7 +84,7 @@ impl SSA {
 
     fn alloc_term(&mut self) -> TermId {
         let id = self.terms.len() as TermId;
-        self.terms.push(Term::Param(!0));
+        self.terms.push(Term::Tombstone);
         id
     }
 
@@ -104,6 +107,7 @@ pub fn naive_ssa_translation(func: &FunctionAST) -> SSA {
         terms: vec![],
         intern: BTreeMap::new(),
         cfg: BTreeMap::new(),
+        roots: BTreeSet::new(),
     };
     let num_blocks = RefCell::new(1);
     let mut ctx = Context {
@@ -191,8 +195,8 @@ impl<'a> Context<'a> {
                 }
 
                 let entry_block = self.last_block;
-                let pred_block = self.new_block();
-                self.last_block = pred_block;
+                let header_block = self.new_block();
+                self.last_block = header_block;
 
                 let true_cond = self.handle_expr(ssa, cond_expr);
                 let false_cond = ssa.add_term(Term::Unary(UnaryOp::Not, true_cond));
@@ -204,20 +208,21 @@ impl<'a> Context<'a> {
                 body_ctx.handle_stmt(ssa, body_stmt);
                 for (sym, entry, phi) in sym_entry_phi_tuples {
                     let bottom = body_ctx.vars[&sym];
-                    ssa.set_term(phi, Term::Phi(pred_block, entry, bottom));
+                    ssa.set_term(phi, Term::Phi(header_block, entry, bottom));
                 }
                 ssa.cfg.insert(
-                    pred_block,
+                    header_block,
                     vec![(entry_block, true_term), (body_ctx.last_block, true_term)],
                 );
-                ssa.cfg.insert(body_block, vec![(pred_block, true_cond)]);
+                ssa.cfg.insert(body_block, vec![(header_block, true_cond)]);
 
                 let exit_block = self.new_block();
-                ssa.cfg.insert(exit_block, vec![(pred_block, false_cond)]);
+                ssa.cfg.insert(exit_block, vec![(header_block, false_cond)]);
                 self.last_block = exit_block;
             }
             Return(expr) => {
-                self.handle_expr(ssa, expr);
+                let returned = self.handle_expr(ssa, expr);
+                ssa.roots.insert(returned);
             }
         }
     }
@@ -295,6 +300,38 @@ impl<'a> Context<'a> {
     }
 }
 
+pub fn dce(ssa: &mut SSA) {
+    let mut alive = BTreeSet::new();
+    let mut worklist = Vec::from_iter(ssa.roots.iter().cloned());
+    worklist.extend(
+        ssa.cfg
+            .iter()
+            .map(|(_, preds)| preds.iter().map(|(_, term)| *term))
+            .flatten(),
+    );
+
+    while let Some(term) = worklist.pop() {
+        if !alive.contains(&term) {
+            alive.insert(term);
+            match ssa.terms[term as usize] {
+                Term::Constant(_) | Term::Param(_) => {}
+                Term::Phi(_, lhs, rhs) | Term::Binary(_, lhs, rhs) => {
+                    worklist.push(lhs);
+                    worklist.push(rhs);
+                }
+                Term::Unary(_, input) => worklist.push(input),
+                Term::Tombstone => panic!(),
+            }
+        }
+    }
+
+    for idx in 0..ssa.terms.len() {
+        if !alive.contains(&(idx as TermId)) {
+            ssa.terms[idx] = Term::Tombstone;
+        }
+    }
+}
+
 pub fn ssa_to_dot<W: Write>(ssa: &SSA, w: &mut W) -> Result<()> {
     writeln!(w, "digraph F{} {{", ssa.name.to_usize())?;
     writeln!(w, "B0[label=\"0\", shape=\"box\", style=\"rounded\"];")?;
@@ -316,7 +353,19 @@ pub fn ssa_to_dot<W: Write>(ssa: &SSA, w: &mut W) -> Result<()> {
         }
     }
     for (term_id, term) in ssa.terms() {
-        writeln!(w, "N{}[label=\"{}\"];", term_id, term.symbol())?;
+        if term != Term::Tombstone {
+            writeln!(
+                w,
+                "N{}[label=\"{}\", color=\"{}\"];",
+                term_id,
+                term.symbol(),
+                if ssa.roots.contains(&term_id) {
+                    "blue"
+                } else {
+                    "black"
+                }
+            )?;
+        }
         match term {
             Term::Constant(_) | Term::Param(_) => {}
             Term::Unary(_, input) => writeln!(w, "N{} -> N{};", input, term_id)?,
@@ -333,6 +382,7 @@ pub fn ssa_to_dot<W: Write>(ssa: &SSA, w: &mut W) -> Result<()> {
                     block, term_id
                 )?;
             }
+            Term::Tombstone => {}
         }
     }
     writeln!(w, "}}")
