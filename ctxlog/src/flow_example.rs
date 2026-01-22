@@ -60,6 +60,23 @@ mod tests {
             iz.insert(&new_row, &mut merge);
         }
 
+        for (row, _) in iz.rows() {
+            println!(
+                "[{:?}, {:?}, {:?}]",
+                row[0],
+                if row[1] == x {
+                    "x"
+                } else if row[1] == y {
+                    "y"
+                } else if row[1] == root_prov() {
+                    "_"
+                } else {
+                    "xy"
+                },
+                IsZero::from(row[2])
+            );
+        }
+
         assert_eq!(iz.get(&[3, root_prov()]), Some(IsZero::Zero.into()));
     }
 }

@@ -1,4 +1,4 @@
-use crate::table::Value;
+use crate::table::{Table, Value};
 
 pub type Provenance = Value;
 
@@ -16,7 +16,7 @@ pub fn joint_use(a: Provenance, b: Provenance) -> Provenance {
 }
 
 pub fn leq(a: Provenance, b: Provenance) -> bool {
-    (!a & b) == 0
+    factor(a, b) == 0
 }
 
 pub fn factor(a: Provenance, b: Provenance) -> Provenance {
