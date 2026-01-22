@@ -1,0 +1,13 @@
+fn example1(y) {
+    x = -6;
+    z = 42;
+    while y < 10 {
+        y = y + 1;
+        x = x + 8;
+        if ((x + y) + z) * y != 2 * y + (y * y + z * y) {
+            z = 24;
+        }
+        x = x - 8;
+    }
+    return z + 7;
+}

@@ -1,0 +1,114 @@
+use core::str::FromStr;
+
+use crate::ast::*;
+
+grammar(interner: &mut Interner);
+
+pub Program: ProgramAST = {
+    FuncList => ProgramAST { funcs: <> },
+}
+
+FuncList: Vec<FunctionAST> = {
+    => Vec::new(),
+    <mut l:FuncList> <x:Func> => {
+        l.push(x);
+        l
+    }
+}
+
+Func: FunctionAST = {
+    "fn" <i:Iden> "(" <p:Params> ")" <s:Stmt> => {
+        FunctionAST { name: interner.get_or_intern(i), params: p, body: s }
+    }
+}
+
+Params: Vec<Symbol> = {
+    => Vec::new(),
+    <x:Iden> => {
+        vec![interner.get_or_intern(x)]
+    },
+    <mut l:Params> "," <x:Iden?> => {
+        match x {
+            None => l,
+            Some(x) => { l.push(interner.get_or_intern(x)); l }
+        }
+    }
+}
+
+StmtList: Vec<StatementAST> = {
+    => Vec::new(),
+    <mut l:StmtList> <x:Stmt> => {
+        l.push(x);
+        l
+    }
+}
+
+Block: StatementAST = {
+    "{" <StmtList> "}" => {
+        StatementAST::Block(<>)
+    }
+}
+
+Stmt: StatementAST = {
+    Block => <>,
+    <i:Iden> "=" <e:BinaryExpr> ";" => {
+        StatementAST::Assign(interner.get_or_intern(i), e)
+    },
+    "if" <c:BinaryExpr> <ts:Block> <fs:("else" <Block>)?> => {
+        StatementAST::IfElse(c, Box::new(ts), fs.map(Box::new))
+    },
+    "while" <c:BinaryExpr> <s:Block> => {
+        StatementAST::While(c, Box::new(s))
+    },
+    "return" <e:BinaryExpr> ";" => {
+        StatementAST::Return(e)
+    },
+}
+
+BinaryExpr: ExpressionAST = {
+    #[precedence(level="0")]
+    UnaryExpr,
+    #[precedence(level="1")] #[assoc(side="left")]
+    <lhs:BinaryExpr> "*" <rhs:BinaryExpr> => ExpressionAST::Multiply(Box::new(lhs), Box::new(rhs)),
+    <lhs:BinaryExpr> "/" <rhs:BinaryExpr> => ExpressionAST::Divide(Box::new(lhs), Box::new(rhs)),
+    <lhs:BinaryExpr> "%" <rhs:BinaryExpr> => ExpressionAST::Modulo(Box::new(lhs), Box::new(rhs)),
+    #[precedence(level="2")] #[assoc(side="left")]
+    <lhs:BinaryExpr> "+" <rhs:BinaryExpr> => ExpressionAST::Add(Box::new(lhs), Box::new(rhs)),
+    <lhs:BinaryExpr> "-" <rhs:BinaryExpr> => ExpressionAST::Subtract(Box::new(lhs), Box::new(rhs)),
+    #[precedence(level="3")] #[assoc(side="left")]
+    <lhs:BinaryExpr> "==" <rhs:BinaryExpr> => ExpressionAST::EqualsEquals(Box::new(lhs), Box::new(rhs)),
+    <lhs:BinaryExpr> "!=" <rhs:BinaryExpr> => ExpressionAST::NotEquals(Box::new(lhs), Box::new(rhs)),
+    <lhs:BinaryExpr> "<" <rhs:BinaryExpr> => ExpressionAST::Less(Box::new(lhs), Box::new(rhs)),
+    <lhs:BinaryExpr> "<=" <rhs:BinaryExpr> => ExpressionAST::LessEquals(Box::new(lhs), Box::new(rhs)),
+    <lhs:BinaryExpr> ">" <rhs:BinaryExpr> => ExpressionAST::Greater(Box::new(lhs), Box::new(rhs)),
+    <lhs:BinaryExpr> ">=" <rhs:BinaryExpr> => ExpressionAST::GreaterEquals(Box::new(lhs), Box::new(rhs)),
+}
+
+UnaryExpr: ExpressionAST = {
+    Atomic,
+    "!" <UnaryExpr> => ExpressionAST::Not(Box::new(<>)),
+    "-" <UnaryExpr> => ExpressionAST::Negate(Box::new(<>)),
+}
+
+Atomic: ExpressionAST = {
+    Num => ExpressionAST::NumberLiteral(<>),
+    Iden => ExpressionAST::Variable(interner.get_or_intern(<>)),
+    <i:Iden> "(" <a:Args> ")" => ExpressionAST::Call(interner.get_or_intern(i), a),
+    "(" <BinaryExpr> ")",
+}
+
+Args: Vec<ExpressionAST> = {
+    => Vec::new(),
+    <x:BinaryExpr> => {
+        vec![x]
+    },
+    <mut l:Args> "," <x:BinaryExpr?> => {
+        match x {
+            None => l,
+            Some(x) => { l.push(x); l }
+        }
+    }
+}
+
+Num: i32 = r"-?[0-9]+" => i32::from_str(<>).unwrap();
+Iden: &'input str = r"[a-zA-Z_][a-zA-Z0-9_]*" => <>;

@@ -3,6 +3,20 @@ name = "ctxlog"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "ctxlog"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ctxlog-cli"
+path = "src/bin/cli.rs"
+
+[build-dependencies]
+lalrpop = "*"
+
 [dependencies]
 hashbrown = "*"
+lalrpop-util = { version = "*", features = ["lexer", "unicode"] }
 rustc-hash = "*"
+string-interner = "*"
+tempfile = "*"
