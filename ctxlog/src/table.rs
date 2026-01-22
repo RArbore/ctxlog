@@ -127,6 +127,15 @@ impl Table {
         }
     }
 
+    pub fn write_dependent(&mut self, id: RowId, new: Value) {
+        let num_determinant = self.num_determinant();
+        let old = self.rows.get_row(id)[num_determinant];
+        if new != old {
+            self.changed = true;
+        }
+        self.rows.get_row_mut(id)[num_determinant] = new;
+     }
+
     pub fn get(&self, determinant: &[Value]) -> Option<Value> {
         let num_determinant = self.num_determinant();
         assert_eq!(determinant.len(), num_determinant);

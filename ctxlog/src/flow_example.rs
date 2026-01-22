@@ -60,24 +60,10 @@ mod tests {
         for new_row in new {
             iz.insert(&new_row, &mut merge);
         }
-
-        for (row, _) in iz.rows() {
-            println!(
-                "[{:?}, {:?}, {:?}]",
-                row[0],
-                if row[1] == x {
-                    "x"
-                } else if row[1] == y {
-                    "y"
-                } else if row[1] == root_prov() {
-                    "_"
-                } else {
-                    "xy"
-                },
-                IsZero::from(row[2])
-            );
-        }
-
         assert_eq!(iz.get(&[3, root_prov()]), Some(IsZero::Zero.into()));
+
+        propagate(&mut iz, &mut merge);
+        assert_eq!(iz.get(&[3, root_prov()]), Some(IsZero::Zero.into()));
+        assert_eq!(iz.get(&[3, joint_use(x, y)]), Some(IsZero::Bottom.into()));
     }
 }
