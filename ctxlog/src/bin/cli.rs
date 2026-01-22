@@ -5,7 +5,7 @@ use tempfile::NamedTempFile;
 
 use ctxlog::ast::Interner;
 use ctxlog::grammar::ProgramParser;
-use ctxlog::term::{dce, naive_ssa_translation, ssa_to_dot};
+use ctxlog::ssa::{dce, naive_ssa_translation, ssa_to_dot};
 
 pub fn main() -> Result<()> {
     let mut interner = Interner::new();

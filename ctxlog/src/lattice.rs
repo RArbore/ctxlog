@@ -2,7 +2,7 @@ use core::cmp::{max, min};
 
 use crate::interner::Interner;
 use crate::table::Value;
-use crate::term::{BinaryOp, UnaryOp};
+use crate::ssa::{BinaryOp, UnaryOp};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Interval {

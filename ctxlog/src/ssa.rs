@@ -5,8 +5,8 @@ use std::io::{Result, Write};
 use string_interner::Symbol as _;
 
 use crate::ast::{ExpressionAST, FunctionAST, StatementAST, Symbol};
+use crate::cfg::{BlockId, CFG};
 
-pub type BlockId = u32;
 pub type TermId = u32;
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
@@ -46,8 +46,6 @@ struct Context<'a> {
     num_blocks: &'a RefCell<BlockId>,
     last_block: BlockId,
 }
-
-pub type CFG = BTreeMap<BlockId, Vec<(BlockId, TermId)>>;
 
 #[derive(Debug, Clone)]
 pub struct SSA {

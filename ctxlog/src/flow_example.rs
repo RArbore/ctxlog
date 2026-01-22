@@ -3,7 +3,7 @@ mod tests {
     use crate::lattice::IsZero;
     use crate::provenance::*;
     use crate::table::{Table, Value};
-    use crate::term::UnaryOp;
+    use crate::ssa::UnaryOp;
 
     #[test]
     fn flow_example() {
