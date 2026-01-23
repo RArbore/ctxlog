@@ -7,15 +7,15 @@ use string_interner::Symbol as _;
 use crate::ast::{ExpressionAST, FunctionAST, StatementAST, Symbol};
 use crate::cfg::{BlockId, CFG};
 
-pub type TermId = u32;
+pub type SSAValueId = u32;
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
-pub enum Term {
+pub enum SSAValue {
     Constant(i32),
     Param(i32),
-    Phi(BlockId, TermId, TermId),
-    Unary(UnaryOp, TermId),
-    Binary(BinaryOp, TermId, TermId),
+    Phi(BlockId, SSAValueId, SSAValueId),
+    Unary(UnaryOp, SSAValueId),
+    Binary(BinaryOp, SSAValueId, SSAValueId),
     Tombstone,
 }
 
@@ -42,7 +42,7 @@ pub enum BinaryOp {
 
 #[derive(Debug, Clone)]
 struct Context<'a> {
-    vars: BTreeMap<Symbol, TermId>,
+    vars: BTreeMap<Symbol, SSAValueId>,
     num_blocks: &'a RefCell<BlockId>,
     last_block: BlockId,
 }
@@ -50,27 +50,27 @@ struct Context<'a> {
 #[derive(Debug, Clone)]
 pub struct SSA {
     pub name: Symbol,
-    pub terms: Vec<Term>,
-    pub intern: BTreeMap<Term, TermId>,
+    pub terms: Vec<SSAValue>,
+    pub intern: BTreeMap<SSAValue, SSAValueId>,
     pub cfg: CFG,
-    pub roots: BTreeSet<TermId>,
+    pub roots: BTreeSet<SSAValueId>,
 }
 
-impl Term {
+impl SSAValue {
     fn symbol(&self) -> String {
         match self {
-            Term::Constant(val) => format!("{}", val),
-            Term::Param(idx) => format!("#{}", idx),
-            Term::Phi(_, _, _) => "Φ".to_string(),
-            Term::Unary(op, _) => format!("{:?}", op),
-            Term::Binary(op, _, _) => format!("{:?}", op),
-            Term::Tombstone => panic!(),
+            SSAValue::Constant(val) => format!("{}", val),
+            SSAValue::Param(idx) => format!("#{}", idx),
+            SSAValue::Phi(_, _, _) => "Φ".to_string(),
+            SSAValue::Unary(op, _) => format!("{:?}", op),
+            SSAValue::Binary(op, _, _) => format!("{:?}", op),
+            SSAValue::Tombstone => panic!(),
         }
     }
 }
 
 impl SSA {
-    fn add_term(&mut self, term: Term) -> TermId {
+    fn add_term(&mut self, term: SSAValue) -> SSAValueId {
         if let Some(id) = self.intern.get(&term) {
             *id
         } else {
@@ -80,22 +80,22 @@ impl SSA {
         }
     }
 
-    fn alloc_term(&mut self) -> TermId {
-        let id = self.terms.len() as TermId;
-        self.terms.push(Term::Tombstone);
+    fn alloc_term(&mut self) -> SSAValueId {
+        let id = self.terms.len() as SSAValueId;
+        self.terms.push(SSAValue::Tombstone);
         id
     }
 
-    fn set_term(&mut self, id: TermId, term: Term) {
+    fn set_term(&mut self, id: SSAValueId, term: SSAValue) {
         self.terms[id as usize] = term;
         self.intern.insert(term, id);
     }
 
-    pub fn terms(&self) -> impl Iterator<Item = (TermId, Term)> + '_ {
+    pub fn terms(&self) -> impl Iterator<Item = (SSAValueId, SSAValue)> + '_ {
         self.terms
             .iter()
             .enumerate()
-            .map(|(idx, term)| (idx as TermId, *term))
+            .map(|(idx, term)| (idx as SSAValueId, *term))
     }
 }
 
@@ -114,7 +114,7 @@ pub fn naive_ssa_translation(func: &FunctionAST) -> SSA {
         last_block: 0,
     };
     for (idx, sym) in func.params.iter().enumerate() {
-        ctx.vars.insert(*sym, ssa.add_term(Term::Param(idx as i32)));
+        ctx.vars.insert(*sym, ssa.add_term(SSAValue::Param(idx as i32)));
     }
     ctx.handle_stmt(&mut ssa, &func.body);
     ssa
@@ -138,8 +138,8 @@ impl<'a> Context<'a> {
             }
             IfElse(cond_expr, then_stmt, else_stmt) => {
                 let true_cond = self.handle_expr(ssa, cond_expr);
-                let false_cond = ssa.add_term(Term::Unary(UnaryOp::Not, true_cond));
-                let true_term = ssa.add_term(Term::Constant(1));
+                let false_cond = ssa.add_term(SSAValue::Unary(UnaryOp::Not, true_cond));
+                let true_term = ssa.add_term(SSAValue::Constant(1));
 
                 let mut then_ctx = self.clone();
                 let true_block = self.new_block();
@@ -178,7 +178,7 @@ impl<'a> Context<'a> {
                     };
                     self.vars.insert(
                         *sym,
-                        ssa.add_term(Term::Phi(merge_block, *then_term, *else_term)),
+                        ssa.add_term(SSAValue::Phi(merge_block, *then_term, *else_term)),
                     );
                 }
                 self.last_block = merge_block;
@@ -197,8 +197,8 @@ impl<'a> Context<'a> {
                 self.last_block = header_block;
 
                 let true_cond = self.handle_expr(ssa, cond_expr);
-                let false_cond = ssa.add_term(Term::Unary(UnaryOp::Not, true_cond));
-                let true_term = ssa.add_term(Term::Constant(1));
+                let false_cond = ssa.add_term(SSAValue::Unary(UnaryOp::Not, true_cond));
+                let true_term = ssa.add_term(SSAValue::Constant(1));
 
                 let body_block = self.new_block();
                 let mut body_ctx = self.clone();
@@ -206,7 +206,7 @@ impl<'a> Context<'a> {
                 body_ctx.handle_stmt(ssa, body_stmt);
                 for (sym, entry, phi) in sym_entry_phi_tuples {
                     let bottom = body_ctx.vars[&sym];
-                    ssa.set_term(phi, Term::Phi(header_block, entry, bottom));
+                    ssa.set_term(phi, SSAValue::Phi(header_block, entry, bottom));
                 }
                 ssa.cfg.insert(
                     header_block,
@@ -225,74 +225,74 @@ impl<'a> Context<'a> {
         }
     }
 
-    fn handle_expr(&self, ssa: &mut SSA, expr: &ExpressionAST) -> TermId {
+    fn handle_expr(&self, ssa: &mut SSA, expr: &ExpressionAST) -> SSAValueId {
         use ExpressionAST::*;
         match expr {
-            NumberLiteral(val) => ssa.add_term(Term::Constant(*val)),
+            NumberLiteral(val) => ssa.add_term(SSAValue::Constant(*val)),
             Variable(sym) => self.vars[sym],
             Call(_, _) => todo!(),
             Add(lhs, rhs) => {
                 let lhs = self.handle_expr(ssa, lhs);
                 let rhs = self.handle_expr(ssa, rhs);
-                ssa.add_term(Term::Binary(BinaryOp::Add, lhs, rhs))
+                ssa.add_term(SSAValue::Binary(BinaryOp::Add, lhs, rhs))
             }
             Subtract(lhs, rhs) => {
                 let lhs = self.handle_expr(ssa, lhs);
                 let rhs = self.handle_expr(ssa, rhs);
-                ssa.add_term(Term::Binary(BinaryOp::Sub, lhs, rhs))
+                ssa.add_term(SSAValue::Binary(BinaryOp::Sub, lhs, rhs))
             }
             Multiply(lhs, rhs) => {
                 let lhs = self.handle_expr(ssa, lhs);
                 let rhs = self.handle_expr(ssa, rhs);
-                ssa.add_term(Term::Binary(BinaryOp::Mul, lhs, rhs))
+                ssa.add_term(SSAValue::Binary(BinaryOp::Mul, lhs, rhs))
             }
             Divide(lhs, rhs) => {
                 let lhs = self.handle_expr(ssa, lhs);
                 let rhs = self.handle_expr(ssa, rhs);
-                ssa.add_term(Term::Binary(BinaryOp::Div, lhs, rhs))
+                ssa.add_term(SSAValue::Binary(BinaryOp::Div, lhs, rhs))
             }
             Modulo(lhs, rhs) => {
                 let lhs = self.handle_expr(ssa, lhs);
                 let rhs = self.handle_expr(ssa, rhs);
-                ssa.add_term(Term::Binary(BinaryOp::Rem, lhs, rhs))
+                ssa.add_term(SSAValue::Binary(BinaryOp::Rem, lhs, rhs))
             }
             EqualsEquals(lhs, rhs) => {
                 let lhs = self.handle_expr(ssa, lhs);
                 let rhs = self.handle_expr(ssa, rhs);
-                ssa.add_term(Term::Binary(BinaryOp::EE, lhs, rhs))
+                ssa.add_term(SSAValue::Binary(BinaryOp::EE, lhs, rhs))
             }
             NotEquals(lhs, rhs) => {
                 let lhs = self.handle_expr(ssa, lhs);
                 let rhs = self.handle_expr(ssa, rhs);
-                ssa.add_term(Term::Binary(BinaryOp::NE, lhs, rhs))
+                ssa.add_term(SSAValue::Binary(BinaryOp::NE, lhs, rhs))
             }
             Less(lhs, rhs) => {
                 let lhs = self.handle_expr(ssa, lhs);
                 let rhs = self.handle_expr(ssa, rhs);
-                ssa.add_term(Term::Binary(BinaryOp::LT, lhs, rhs))
+                ssa.add_term(SSAValue::Binary(BinaryOp::LT, lhs, rhs))
             }
             LessEquals(lhs, rhs) => {
                 let lhs = self.handle_expr(ssa, lhs);
                 let rhs = self.handle_expr(ssa, rhs);
-                ssa.add_term(Term::Binary(BinaryOp::LE, lhs, rhs))
+                ssa.add_term(SSAValue::Binary(BinaryOp::LE, lhs, rhs))
             }
             Greater(lhs, rhs) => {
                 let lhs = self.handle_expr(ssa, lhs);
                 let rhs = self.handle_expr(ssa, rhs);
-                ssa.add_term(Term::Binary(BinaryOp::GT, lhs, rhs))
+                ssa.add_term(SSAValue::Binary(BinaryOp::GT, lhs, rhs))
             }
             GreaterEquals(lhs, rhs) => {
                 let lhs = self.handle_expr(ssa, lhs);
                 let rhs = self.handle_expr(ssa, rhs);
-                ssa.add_term(Term::Binary(BinaryOp::GE, lhs, rhs))
+                ssa.add_term(SSAValue::Binary(BinaryOp::GE, lhs, rhs))
             }
             Not(value) => {
                 let value = self.handle_expr(ssa, value);
-                ssa.add_term(Term::Unary(UnaryOp::Not, value))
+                ssa.add_term(SSAValue::Unary(UnaryOp::Not, value))
             }
             Negate(value) => {
                 let value = self.handle_expr(ssa, value);
-                ssa.add_term(Term::Unary(UnaryOp::Negate, value))
+                ssa.add_term(SSAValue::Unary(UnaryOp::Negate, value))
             }
         }
     }
@@ -312,20 +312,20 @@ pub fn dce(ssa: &mut SSA) {
         if !alive.contains(&term) {
             alive.insert(term);
             match ssa.terms[term as usize] {
-                Term::Constant(_) | Term::Param(_) => {}
-                Term::Phi(_, lhs, rhs) | Term::Binary(_, lhs, rhs) => {
+                SSAValue::Constant(_) | SSAValue::Param(_) => {}
+                SSAValue::Phi(_, lhs, rhs) | SSAValue::Binary(_, lhs, rhs) => {
                     worklist.push(lhs);
                     worklist.push(rhs);
                 }
-                Term::Unary(_, input) => worklist.push(input),
-                Term::Tombstone => panic!(),
+                SSAValue::Unary(_, input) => worklist.push(input),
+                SSAValue::Tombstone => panic!(),
             }
         }
     }
 
     for idx in 0..ssa.terms.len() {
-        if !alive.contains(&(idx as TermId)) {
-            ssa.terms[idx] = Term::Tombstone;
+        if !alive.contains(&(idx as SSAValueId)) {
+            ssa.terms[idx] = SSAValue::Tombstone;
         }
     }
 }
@@ -341,7 +341,7 @@ pub fn ssa_to_dot<W: Write>(ssa: &SSA, w: &mut W) -> Result<()> {
         )?;
         for (pred, cond) in cfg {
             writeln!(w, "B{} -> B{};", pred, block)?;
-            if ssa.terms[*cond as usize] != Term::Constant(1) {
+            if ssa.terms[*cond as usize] != SSAValue::Constant(1) {
                 writeln!(
                     w,
                     "N{} -> B{} [style=\"dotted\", constraint=false];",
@@ -351,7 +351,7 @@ pub fn ssa_to_dot<W: Write>(ssa: &SSA, w: &mut W) -> Result<()> {
         }
     }
     for (term_id, term) in ssa.terms() {
-        if term != Term::Tombstone {
+        if term != SSAValue::Tombstone {
             writeln!(
                 w,
                 "N{}[label=\"{}\", color=\"{}\"];",
@@ -365,13 +365,13 @@ pub fn ssa_to_dot<W: Write>(ssa: &SSA, w: &mut W) -> Result<()> {
             )?;
         }
         match term {
-            Term::Constant(_) | Term::Param(_) => {}
-            Term::Unary(_, input) => writeln!(w, "N{} -> N{};", input, term_id)?,
-            Term::Binary(_, lhs, rhs) => {
+            SSAValue::Constant(_) | SSAValue::Param(_) => {}
+            SSAValue::Unary(_, input) => writeln!(w, "N{} -> N{};", input, term_id)?,
+            SSAValue::Binary(_, lhs, rhs) => {
                 writeln!(w, "N{} -> N{};", lhs, term_id)?;
                 writeln!(w, "N{} -> N{};", rhs, term_id)?;
             }
-            Term::Phi(block, lhs, rhs) => {
+            SSAValue::Phi(block, lhs, rhs) => {
                 writeln!(w, "N{} -> N{};", lhs, term_id)?;
                 writeln!(w, "N{} -> N{};", rhs, term_id)?;
                 writeln!(
@@ -380,7 +380,7 @@ pub fn ssa_to_dot<W: Write>(ssa: &SSA, w: &mut W) -> Result<()> {
                     block, term_id
                 )?;
             }
-            Term::Tombstone => {}
+            SSAValue::Tombstone => {}
         }
     }
     writeln!(w, "}}")
