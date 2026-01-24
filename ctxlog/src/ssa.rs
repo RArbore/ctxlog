@@ -354,14 +354,15 @@ pub fn ssa_to_dot<W: Write>(ssa: &SSA, w: &mut W) -> Result<()> {
         if term != SSAValue::Tombstone {
             writeln!(
                 w,
-                "N{}[label=\"{}\", color=\"{}\"];",
+                "N{}[label=\"{}\", color=\"{}\", xlabel=\"{}\"];",
                 term_id,
                 term.symbol(),
                 if ssa.roots.contains(&term_id) {
                     "blue"
                 } else {
                     "black"
-                }
+                },
+                term_id
             )?;
         }
         match term {

@@ -154,6 +154,7 @@ fn semi_nca_compress(block_num: usize, ancestors: &mut Vec<usize>, labels: &mut 
 #[derive(Debug, Default)]
 pub struct DomContexts {
     pub contexts: Vec<SSAValueId>,
+    pub block_provs: BTreeMap<BlockId, Provenance>,
     pub phi_factors: BTreeMap<BlockId, Vec<Provenance>>,
 }
 
@@ -172,20 +173,33 @@ pub fn compute_contexts(ssa: &SSA, dom: &DomTree) -> DomContexts {
         }
     }
 
+    ctx.block_provs.insert(0, root_prov());
+    for (block, _) in &ssa.cfg {
+        let mut prov = root_prov();
+        let mut cursor = block;
+        while let Some(pred) = dom.idom.get(&cursor) {
+            let preds = &ssa.cfg[&cursor];
+            if preds.len() == 1 && preds[0].0 == *pred {
+                let cond = preds[0].1;
+                prov = joint_use(prov, value_to_prov[&cond]);
+            }
+
+            if let Some(pred_prov) = ctx.block_provs.get(pred) {
+                prov = joint_use(prov, *pred_prov);
+                break;
+            }
+
+            cursor = pred;
+        }
+        ctx.block_provs.insert(*block, prov);
+    }
+
     for (block, preds) in &ssa.cfg {
         if preds.len() > 1 {
+            assert_eq!(preds.len(), 2);
             let phi_factors = ctx.phi_factors.entry(*block).or_default();
             for (pred, cond) in preds {
-                let mut prov = value_to_prov[cond];
-                let mut cursor = pred;
-                while let Some(pred) = dom.idom.get(&cursor) {
-                    let preds = &ssa.cfg[&cursor];
-                    if preds.len() == 1 && preds[0].0 == *pred {
-                        let cond = preds[0].1;
-                        prov = joint_use(prov, value_to_prov[&cond]);
-                    }
-                    cursor = pred;
-                }
+                let prov = joint_use(ctx.block_provs[pred], value_to_prov[cond]);
                 phi_factors.push(prov);
             }
         }
