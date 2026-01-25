@@ -53,7 +53,7 @@ pub struct SSA {
     pub terms: Vec<SSAValue>,
     pub intern: BTreeMap<SSAValue, SSAValueId>,
     pub cfg: CFG,
-    pub roots: BTreeSet<SSAValueId>,
+    pub roots: BTreeMap<BlockId, SSAValueId>,
 }
 
 impl SSAValue {
@@ -105,7 +105,7 @@ pub fn naive_ssa_translation(func: &FunctionAST) -> SSA {
         terms: vec![],
         intern: BTreeMap::new(),
         cfg: BTreeMap::new(),
-        roots: BTreeSet::new(),
+        roots: BTreeMap::new(),
     };
     let num_blocks = RefCell::new(1);
     let mut ctx = Context {
@@ -220,7 +220,7 @@ impl<'a> Context<'a> {
             }
             Return(expr) => {
                 let returned = self.handle_expr(ssa, expr);
-                ssa.roots.insert(returned);
+                ssa.roots.insert(self.last_block, returned);
             }
         }
     }
@@ -300,7 +300,7 @@ impl<'a> Context<'a> {
 
 pub fn dce(ssa: &mut SSA) {
     let mut alive = BTreeSet::new();
-    let mut worklist = Vec::from_iter(ssa.roots.iter().cloned());
+    let mut worklist = Vec::from_iter(ssa.roots.iter().map(|(_, value)| *value));
     worklist.extend(
         ssa.cfg
             .iter()
@@ -357,7 +357,7 @@ pub fn ssa_to_dot<W: Write>(ssa: &SSA, w: &mut W) -> Result<()> {
                 "N{}[label=\"{}\", color=\"{}\", xlabel=\"{}\"];",
                 term_id,
                 term.symbol(),
-                if ssa.roots.contains(&term_id) {
+                if ssa.roots.iter().any(|(_, value)| *value == term_id) {
                     "blue"
                 } else {
                     "black"
