@@ -2,7 +2,7 @@ use core::str::FromStr;
 
 use crate::ast::*;
 
-grammar(interner: &mut Interner);
+grammar(interner: &mut NameInterner);
 
 pub Program: ProgramAST = {
     FuncList => ProgramAST { funcs: <> },

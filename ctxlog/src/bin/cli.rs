@@ -3,16 +3,17 @@ use std::process::Command;
 
 use tempfile::NamedTempFile;
 
-use ctxlog::ast::Interner;
+use ctxlog::ast::NameInterner;
 use ctxlog::cfg::{DomContexts, compute_contexts, dominator};
 use ctxlog::grammar::ProgramParser;
-use ctxlog::lattice::IsZero;
-use ctxlog::provenance::{factor, joint_use, mk_prov, propagate, root_prov};
+use ctxlog::interner::Interner;
+use ctxlog::lattice::{IsZero, Interval};
+use ctxlog::provenance::{factor, joint_use, mk_prov, propagate, root_prov, leq};
 use ctxlog::ssa::{SSA, SSAValue, dce, naive_ssa_translation, ssa_to_dot};
 use ctxlog::table::{Table, Value};
 
 pub fn main() -> Result<()> {
-    let mut interner = Interner::new();
+    let mut interner = NameInterner::new();
 
     let mut imp_program = String::new();
     stdin().read_to_string(&mut imp_program)?;
@@ -35,13 +36,16 @@ pub fn main() -> Result<()> {
 }
 
 fn analysis(ssa: &SSA, ctxs: &DomContexts) {
+    let int_intern = Interner::new();
     let mut iz = Table::new(2);
-    let mut merge = |iz1, iz2| Value::from(IsZero::from(iz1).meet(&IsZero::from(iz2)));
+    let mut int = Table::new(2);
+    let mut iz_merge = |iz1, iz2| Value::from(IsZero::from(iz1).meet(&IsZero::from(iz2)));
+    let mut int_merge = int_intern.intersect();
 
     for (idx, cond) in ctxs.contexts.iter().enumerate() {
         iz.insert(
             &[*cond, mk_prov(idx as u32), IsZero::NotZero.into()],
-            &mut merge,
+            &mut iz_merge,
         );
     }
 
@@ -50,13 +54,16 @@ fn analysis(ssa: &SSA, ctxs: &DomContexts) {
             use SSAValue::*;
             match term {
                 Constant(0) => {
-                    iz.insert(&[term_id, root_prov(), IsZero::Zero.into()], &mut merge);
+                    iz.insert(&[term_id, root_prov(), IsZero::Zero.into()], &mut iz_merge);
+                    int.insert(&[term_id, root_prov(), int_intern.intern(Interval::from(0)).into()], &mut int_merge);
                 }
-                Constant(_) => {
-                    iz.insert(&[term_id, root_prov(), IsZero::NotZero.into()], &mut merge);
+                Constant(c) => {
+                    iz.insert(&[term_id, root_prov(), IsZero::NotZero.into()], &mut iz_merge);
+                    int.insert(&[term_id, root_prov(), int_intern.intern(Interval::from(c)).into()], &mut int_merge);
                 }
                 Param(_) => {
-                    iz.insert(&[term_id, root_prov(), IsZero::Top.into()], &mut merge);
+                    iz.insert(&[term_id, root_prov(), IsZero::Top.into()], &mut iz_merge);
+                    int.insert(&[term_id, root_prov(), int_intern.intern(Interval::top()).into()], &mut int_merge);
                 }
                 Phi(block, lhs, rhs) => {
                     let factors = &ctxs.phi_factors[&block];
@@ -81,7 +88,27 @@ fn analysis(ssa: &SSA, ctxs: &DomContexts) {
                     }
 
                     for new_row in new {
-                        iz.insert(&new_row, &mut merge);
+                        iz.insert(&new_row, &mut iz_merge);
+                    }
+
+                    let mut new = vec![];
+                    for (row1, _) in int.rows() {
+                        if row1[0] == lhs {
+                            for (row2, _) in int.rows() {
+                                if row2[0] == rhs {
+                                    let join_int = int_intern.union()(row1[2], row2[2]);
+                                    let prov = joint_use(
+                                        factor(lhs_factor, row1[1]),
+                                        factor(rhs_factor, row2[1]),
+                                    );
+                                    new.push([term_id, prov, join_int.into()]);
+                                }
+                            }
+                        }
+                    }
+
+                    for new_row in new {
+                        int.insert(&new_row, &mut int_merge);
                     }
                 }
                 Unary(op, input) => {
@@ -103,7 +130,22 @@ fn analysis(ssa: &SSA, ctxs: &DomContexts) {
                     }
 
                     for new_row in new {
-                        iz.insert(&new_row, &mut merge);
+                        iz.insert(&new_row, &mut iz_merge);
+                    }
+
+                    let mut new = vec![];
+                    for (row, _) in int.rows() {
+                        if row[0] == input {
+                            new.push([
+                                term_id,
+                                row[1],
+                                int_intern.forward_unary()(row[2], op),
+                            ])
+                        }
+                    }
+
+                    for new_row in new {
+                        int.insert(&new_row, &mut int_merge);
                     }
                 }
                 Binary(op, lhs, rhs) => {
@@ -125,14 +167,34 @@ fn analysis(ssa: &SSA, ctxs: &DomContexts) {
                     }
 
                     for new_row in new {
-                        iz.insert(&new_row, &mut merge);
+                        iz.insert(&new_row, &mut iz_merge);
+                    }
+
+                    let mut new = vec![];
+                    for (row1, _) in int.rows() {
+                        if row1[0] == lhs {
+                            for (row2, _) in int.rows() {
+                                if row2[0] == rhs {
+                                    new.push([
+                                        term_id,
+                                        joint_use(row1[1], row2[1]),
+                                        int_intern.forward_binary()(row1[2], row2[2], op),
+                                    ])
+                                }
+                            }
+                        }
+                    }
+
+                    for new_row in new {
+                        int.insert(&new_row, &mut int_merge);
                     }
                 }
                 Tombstone => {}
             }
         }
 
-        propagate(&mut iz, &mut merge);
+        propagate(&mut iz, &mut iz_merge);
+        propagate(&mut int, &mut int_merge);
     }
 
     for (row, _) in iz.rows() {
@@ -149,12 +211,39 @@ fn analysis(ssa: &SSA, ctxs: &DomContexts) {
         println!("{}: {:?} @ {}", row[0], IsZero::from(row[2]), block_id);
     }
 
+    for (row, _) in int.rows() {
+        let Some(block_id) = ctxs
+            .block_provs
+            .iter()
+            .filter(|(_, prov)| **prov == row[1])
+            .map(|(block, _)| *block)
+            .min()
+        else {
+            continue;
+        };
+
+        println!("{}: {:?} @ {}", row[0], int_intern.get(row[2].into()), block_id);
+    }
+
     for (exit, root) in &ssa.roots {
         let prov = ctxs.block_provs[exit];
+        let mut agg = IsZero::Top;
         for (row, _) in iz.rows() {
-            if row[0] == *root && row[1] == prov {
-                println!("Root {} at exit {}: {:?}", row[0], exit, IsZero::from(row[2]));
+            if row[0] == *root && leq(prov, row[1]) {
+                agg = agg.meet(&IsZero::from(row[2]));
             }
         }
+        println!("Root {} at exit {}: {:?}", root, exit, agg);
+    }
+
+    for (exit, root) in &ssa.roots {
+        let prov = ctxs.block_provs[exit];
+        let mut agg = Interval::top();
+        for (row, _) in int.rows() {
+            if row[0] == *root && leq(prov, row[1]) {
+                agg = agg.intersect(&int_intern.get(row[2].into()));
+            }
+        }
+        println!("Root {} at exit {}: {:?}", root, exit, agg);
     }
 }

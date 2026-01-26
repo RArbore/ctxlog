@@ -3,7 +3,7 @@ use string_interner::backend::StringBackend;
 use string_interner::symbol::SymbolU16;
 
 pub type Symbol = SymbolU16;
-pub type Interner = StringInterner<StringBackend<Symbol>>;
+pub type NameInterner = StringInterner<StringBackend<Symbol>>;
 
 #[derive(Debug)]
 pub struct ProgramAST {

@@ -25,6 +25,13 @@ impl Interval {
         }
     }
 
+    pub fn from(cons: i32) -> Interval {
+        Interval {
+            low: cons,
+            high: cons,
+        }
+    }
+
     pub fn union(&self, other: &Interval) -> Interval {
         Interval {
             low: min(self.low, other.low),
@@ -184,9 +191,30 @@ impl Interval {
 }
 
 impl Interner<Interval> {
-    pub fn merge(&self) -> impl FnMut(Value, Value) -> Value + '_ {
+    pub fn intersect(&self) -> impl FnMut(Value, Value) -> Value + '_ {
         |a: Value, b: Value| {
             self.intern(self.get(a.into()).intersect(&self.get(b.into())))
+                .into()
+        }
+    }
+
+    pub fn union(&self) -> impl FnMut(Value, Value) -> Value + '_ {
+        |a: Value, b: Value| {
+            self.intern(self.get(a.into()).union(&self.get(b.into())))
+                .into()
+        }
+    }
+
+    pub fn forward_unary(&self) -> impl FnMut(Value, UnaryOp) -> Value + '_ {
+        |a: Value, op: UnaryOp| {
+            self.intern(self.get(a.into()).forward_unary(op))
+                .into()
+        }
+    }
+
+    pub fn forward_binary(&self) -> impl FnMut(Value, Value, BinaryOp) -> Value + '_ {
+        |a: Value, b: Value, op: BinaryOp| {
+            self.intern(self.get(a.into()).forward_binary(&self.get(b.into()), op))
                 .into()
         }
     }
