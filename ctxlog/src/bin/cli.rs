@@ -148,4 +148,13 @@ fn analysis(ssa: &SSA, ctxs: &DomContexts) {
 
         println!("{}: {:?} @ {}", row[0], IsZero::from(row[2]), block_id);
     }
+
+    for (exit, root) in &ssa.roots {
+        let prov = ctxs.block_provs[exit];
+        for (row, _) in iz.rows() {
+            if row[0] == *root && row[1] == prov {
+                println!("Root {} at exit {}: {:?}", row[0], exit, IsZero::from(row[2]));
+            }
+        }
+    }
 }
