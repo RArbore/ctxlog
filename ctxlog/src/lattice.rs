@@ -32,6 +32,20 @@ impl Interval {
         }
     }
 
+    pub fn low(low: i32) -> Interval {
+        Interval {
+            low,
+            high: i32::MAX,
+        }
+    }
+
+    pub fn high(high: i32) -> Interval {
+        Interval {
+            low: i32::MIN,
+            high,
+        }
+    }
+
     pub fn union(&self, other: &Interval) -> Interval {
         Interval {
             low: min(self.low, other.low),

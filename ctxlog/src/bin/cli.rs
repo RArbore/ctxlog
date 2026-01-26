@@ -7,9 +7,9 @@ use ctxlog::ast::NameInterner;
 use ctxlog::cfg::{DomContexts, compute_contexts, dominator};
 use ctxlog::grammar::ProgramParser;
 use ctxlog::interner::Interner;
-use ctxlog::lattice::{IsZero, Interval};
-use ctxlog::provenance::{factor, joint_use, mk_prov, propagate, root_prov, leq};
-use ctxlog::ssa::{SSA, SSAValue, dce, naive_ssa_translation, ssa_to_dot};
+use ctxlog::lattice::{Interval, IsZero};
+use ctxlog::provenance::{factor, joint_use, leq, mk_prov, propagate, root_prov};
+use ctxlog::ssa::{BinaryOp, SSA, SSAValue, dce, naive_ssa_translation, ssa_to_dot};
 use ctxlog::table::{Table, Value};
 
 pub fn main() -> Result<()> {
@@ -55,15 +55,39 @@ fn analysis(ssa: &SSA, ctxs: &DomContexts) {
             match term {
                 Constant(0) => {
                     iz.insert(&[term_id, root_prov(), IsZero::Zero.into()], &mut iz_merge);
-                    int.insert(&[term_id, root_prov(), int_intern.intern(Interval::from(0)).into()], &mut int_merge);
+                    int.insert(
+                        &[
+                            term_id,
+                            root_prov(),
+                            int_intern.intern(Interval::from(0)).into(),
+                        ],
+                        &mut int_merge,
+                    );
                 }
                 Constant(c) => {
-                    iz.insert(&[term_id, root_prov(), IsZero::NotZero.into()], &mut iz_merge);
-                    int.insert(&[term_id, root_prov(), int_intern.intern(Interval::from(c)).into()], &mut int_merge);
+                    iz.insert(
+                        &[term_id, root_prov(), IsZero::NotZero.into()],
+                        &mut iz_merge,
+                    );
+                    int.insert(
+                        &[
+                            term_id,
+                            root_prov(),
+                            int_intern.intern(Interval::from(c)).into(),
+                        ],
+                        &mut int_merge,
+                    );
                 }
                 Param(_) => {
                     iz.insert(&[term_id, root_prov(), IsZero::Top.into()], &mut iz_merge);
-                    int.insert(&[term_id, root_prov(), int_intern.intern(Interval::top()).into()], &mut int_merge);
+                    int.insert(
+                        &[
+                            term_id,
+                            root_prov(),
+                            int_intern.intern(Interval::top()).into(),
+                        ],
+                        &mut int_merge,
+                    );
                 }
                 Phi(block, lhs, rhs) => {
                     let factors = &ctxs.phi_factors[&block];
@@ -136,11 +160,7 @@ fn analysis(ssa: &SSA, ctxs: &DomContexts) {
                     let mut new = vec![];
                     for (row, _) in int.rows() {
                         if row[0] == input {
-                            new.push([
-                                term_id,
-                                row[1],
-                                int_intern.forward_unary()(row[2], op),
-                            ])
+                            new.push([term_id, row[1], int_intern.forward_unary()(row[2], op)])
                         }
                     }
 
@@ -188,8 +208,53 @@ fn analysis(ssa: &SSA, ctxs: &DomContexts) {
                     for new_row in new {
                         int.insert(&new_row, &mut int_merge);
                     }
+
+                    let mut new = vec![];
+                    if op == BinaryOp::LT {
+                        for (iz_row, _) in iz.rows() {
+                            if iz_row[0] == term_id && IsZero::from(iz_row[2]).leq(&IsZero::NotZero)
+                            {
+                                for (rhs_row, _) in int.rows() {
+                                    if rhs_row[0] == rhs {
+                                        let high = int_intern.get(rhs_row[2].into()).high;
+                                        new.push([
+                                            lhs,
+                                            joint_use(iz_row[1], rhs_row[1]),
+                                            int_intern.intern(Interval::high(high - 1)).into(),
+                                        ]);
+                                    }
+                                }
+                            } else if iz_row[0] == term_id
+                                && IsZero::from(iz_row[2]).leq(&IsZero::Zero)
+                            {
+                                for (rhs_row, _) in int.rows() {
+                                    if rhs_row[0] == rhs {
+                                        let low = int_intern.get(rhs_row[2].into()).low;
+                                        new.push([
+                                            lhs,
+                                            joint_use(iz_row[1], rhs_row[1]),
+                                            int_intern.intern(Interval::low(low)).into(),
+                                        ]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    for new_row in new {
+                        int.insert(&new_row, &mut int_merge);
+                    }
                 }
                 Tombstone => {}
+            }
+        }
+
+        for (row, _) in iz.rows() {
+            if IsZero::from(row[2]) == IsZero::Zero {
+                int.insert(
+                    &[row[0], row[1], int_intern.intern(Interval::from(0)).into()],
+                    &mut int_merge,
+                );
             }
         }
 
@@ -222,7 +287,12 @@ fn analysis(ssa: &SSA, ctxs: &DomContexts) {
             continue;
         };
 
-        println!("{}: {:?} @ {}", row[0], int_intern.get(row[2].into()), block_id);
+        println!(
+            "{}: {:?} @ {}",
+            row[0],
+            int_intern.get(row[2].into()),
+            block_id
+        );
     }
 
     for (exit, root) in &ssa.roots {
