@@ -245,6 +245,7 @@ fn analysis(ssa: &SSA, ctxs: &DomContexts) {
                         int.insert(&new_row, &mut int_merge);
                     }
                 }
+                Call(sym, args) => {}
                 Tombstone => {}
             }
         }

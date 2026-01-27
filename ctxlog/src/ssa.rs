@@ -9,13 +9,14 @@ use crate::cfg::{BlockId, CFG};
 
 pub type SSAValueId = u32;
 
-#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq)]
 pub enum SSAValue {
     Constant(i32),
     Param(i32),
     Phi(BlockId, SSAValueId, SSAValueId),
     Unary(UnaryOp, SSAValueId),
     Binary(BinaryOp, SSAValueId, SSAValueId),
+    Call(Symbol, Vec<SSAValueId>),
     Tombstone,
 }
 
@@ -64,6 +65,7 @@ impl SSAValue {
             SSAValue::Phi(_, _, _) => "Φ".to_string(),
             SSAValue::Unary(op, _) => format!("{:?}", op),
             SSAValue::Binary(op, _, _) => format!("{:?}", op),
+            SSAValue::Call(symbol, _) => format!("call({})", symbol.to_usize()),
             SSAValue::Tombstone => panic!(),
         }
     }
@@ -87,7 +89,7 @@ impl SSA {
     }
 
     fn set_term(&mut self, id: SSAValueId, term: SSAValue) {
-        self.terms[id as usize] = term;
+        self.terms[id as usize] = term.clone();
         self.intern.insert(term, id);
     }
 
@@ -95,7 +97,7 @@ impl SSA {
         self.terms
             .iter()
             .enumerate()
-            .map(|(idx, term)| (idx as SSAValueId, *term))
+            .map(|(idx, term)| (idx as SSAValueId, term.clone()))
     }
 }
 
@@ -114,7 +116,8 @@ pub fn naive_ssa_translation(func: &FunctionAST) -> SSA {
         last_block: 0,
     };
     for (idx, sym) in func.params.iter().enumerate() {
-        ctx.vars.insert(*sym, ssa.add_term(SSAValue::Param(idx as i32)));
+        ctx.vars
+            .insert(*sym, ssa.add_term(SSAValue::Param(idx as i32)));
     }
     ctx.handle_stmt(&mut ssa, &func.body);
     ssa
@@ -230,7 +233,10 @@ impl<'a> Context<'a> {
         match expr {
             NumberLiteral(val) => ssa.add_term(SSAValue::Constant(*val)),
             Variable(sym) => self.vars[sym],
-            Call(_, _) => todo!(),
+            Call(sym, args) => {
+                let args = args.iter().map(|arg| self.handle_expr(ssa, arg)).collect();
+                ssa.add_term(SSAValue::Call(*sym, args))
+            }
             Add(lhs, rhs) => {
                 let lhs = self.handle_expr(ssa, lhs);
                 let rhs = self.handle_expr(ssa, rhs);
@@ -318,6 +324,7 @@ pub fn dce(ssa: &mut SSA) {
                     worklist.push(rhs);
                 }
                 SSAValue::Unary(_, input) => worklist.push(input),
+                SSAValue::Call(_, ref args) => worklist.extend(args),
                 SSAValue::Tombstone => panic!(),
             }
         }
@@ -380,6 +387,11 @@ pub fn ssa_to_dot<W: Write>(ssa: &SSA, w: &mut W) -> Result<()> {
                     "B{} -> N{} [style=\"dashed\", constraint=false];",
                     block, term_id
                 )?;
+            }
+            SSAValue::Call(_, args) => {
+                for arg in args {
+                    writeln!(w, "N{} -> N{};", arg, term_id)?;
+                }
             }
             SSAValue::Tombstone => {}
         }

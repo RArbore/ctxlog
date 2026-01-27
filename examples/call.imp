@@ -1,0 +1,11 @@
+fn caller() {
+	x = 3;
+	y = x + 1;
+	z = callee(y);
+	w = callee(z);
+	return w;
+}
+
+fn callee(x) {
+	return x + 1;
+}
