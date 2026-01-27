@@ -1,8 +1,7 @@
 use core::cmp::min;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::provenance::{Provenance, joint_use, mk_prov, root_prov};
-use crate::ssa::{SSA, SSAValue, SSAValueId};
+use crate::ssa::SSAValueId;
 
 pub type BlockId = u32;
 pub type CFG = BTreeMap<BlockId, Vec<(BlockId, SSAValueId)>>;
@@ -149,61 +148,4 @@ fn semi_nca_compress(block_num: usize, ancestors: &mut Vec<usize>, labels: &mut 
         }
         ancestors[block_num] = ancestors[ancestor];
     }
-}
-
-#[derive(Debug, Default)]
-pub struct DomContexts {
-    pub contexts: Vec<SSAValueId>,
-    pub block_provs: BTreeMap<BlockId, Provenance>,
-    pub phi_factors: BTreeMap<BlockId, Vec<Provenance>>,
-}
-
-pub fn compute_contexts(ssa: &SSA, dom: &DomTree) -> DomContexts {
-    let mut ctx = DomContexts::default();
-    let mut value_to_prov = BTreeMap::new();
-    for (_, preds) in &ssa.cfg {
-        for (_, cond) in preds {
-            if ssa.terms[*cond as usize] == SSAValue::Constant(1) {
-                value_to_prov.insert(*cond, root_prov());
-            } else {
-                let prov = mk_prov(ctx.contexts.len() as u32);
-                ctx.contexts.push(*cond);
-                value_to_prov.insert(*cond, prov);
-            }
-        }
-    }
-
-    ctx.block_provs.insert(0, root_prov());
-    for (block, _) in &ssa.cfg {
-        let mut prov = root_prov();
-        let mut cursor = block;
-        while let Some(pred) = dom.idom.get(&cursor) {
-            let preds = &ssa.cfg[&cursor];
-            if preds.len() == 1 && preds[0].0 == *pred {
-                let cond = preds[0].1;
-                prov = joint_use(prov, value_to_prov[&cond]);
-            }
-
-            if let Some(pred_prov) = ctx.block_provs.get(pred) {
-                prov = joint_use(prov, *pred_prov);
-                break;
-            }
-
-            cursor = pred;
-        }
-        ctx.block_provs.insert(*block, prov);
-    }
-
-    for (block, preds) in &ssa.cfg {
-        if preds.len() > 1 {
-            assert_eq!(preds.len(), 2);
-            let phi_factors = ctx.phi_factors.entry(*block).or_default();
-            for (pred, cond) in preds {
-                let prov = joint_use(ctx.block_provs[pred], value_to_prov[cond]);
-                phi_factors.push(prov);
-            }
-        }
-    }
-
-    ctx
 }

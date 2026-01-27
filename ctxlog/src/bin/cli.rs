@@ -4,11 +4,13 @@ use std::process::Command;
 use tempfile::NamedTempFile;
 
 use ctxlog::ast::NameInterner;
-use ctxlog::cfg::{DomContexts, compute_contexts, dominator};
+use ctxlog::cfg::dominator;
 use ctxlog::grammar::ProgramParser;
 use ctxlog::interner::Interner;
 use ctxlog::lattice::{Interval, IsZero};
-use ctxlog::provenance::{factor, joint_use, leq, mk_prov, propagate, root_prov};
+use ctxlog::provenance::{
+    FlowContexts, flow_contexts, factor, joint_use, leq, mk_prov, propagate, root_prov,
+};
 use ctxlog::ssa::{BinaryOp, SSA, SSAValue, dce, naive_ssa_translation, ssa_to_dot};
 use ctxlog::table::{Table, Value};
 
@@ -25,7 +27,7 @@ pub fn main() -> Result<()> {
         let mut terms = naive_ssa_translation(func);
         dce(&mut terms);
         let dom = dominator(&terms.cfg);
-        let ctxs = compute_contexts(&terms, &dom);
+        let ctxs = flow_contexts(&terms, &dom);
         analysis(&terms, &ctxs);
         let mut tmp = NamedTempFile::new().unwrap();
         ssa_to_dot(&terms, &mut tmp)?;
@@ -35,7 +37,7 @@ pub fn main() -> Result<()> {
     Ok(())
 }
 
-fn analysis(ssa: &SSA, ctxs: &DomContexts) {
+fn analysis(ssa: &SSA, ctxs: &FlowContexts) {
     let int_intern = Interner::new();
     let mut iz = Table::new(2);
     let mut int = Table::new(2);

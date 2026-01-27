@@ -1,5 +1,8 @@
 use std::collections::HashMap;
 
+use crate::ast::Symbol;
+use crate::cfg::{BlockId, DomTree};
+use crate::ssa::{SSA, SSAValue, SSAValueId};
 use crate::table::{Table, Value};
 
 pub type Provenance = Value;
@@ -82,4 +85,70 @@ where
             }
         }
     }
+}
+
+#[derive(Debug, Default)]
+pub struct FlowContexts {
+    pub contexts: Vec<SSAValueId>,
+    pub block_provs: HashMap<BlockId, Provenance>,
+    pub phi_factors: HashMap<BlockId, Vec<Provenance>>,
+}
+
+pub fn flow_contexts(ssa: &SSA, dom: &DomTree) -> FlowContexts {
+    let mut ctx = FlowContexts::default();
+    let mut value_to_prov = HashMap::new();
+    for (_, preds) in &ssa.cfg {
+        for (_, cond) in preds {
+            if ssa.terms[*cond as usize] == SSAValue::Constant(1) {
+                value_to_prov.insert(*cond, root_prov());
+            } else {
+                let prov = mk_prov(ctx.contexts.len() as u32);
+                ctx.contexts.push(*cond);
+                value_to_prov.insert(*cond, prov);
+            }
+        }
+    }
+
+    ctx.block_provs.insert(0, root_prov());
+    for (block, _) in &ssa.cfg {
+        let mut prov = root_prov();
+        let mut cursor = block;
+        while let Some(pred) = dom.idom.get(&cursor) {
+            let preds = &ssa.cfg[&cursor];
+            if preds.len() == 1 && preds[0].0 == *pred {
+                let cond = preds[0].1;
+                prov = joint_use(prov, value_to_prov[&cond]);
+            }
+
+            if let Some(pred_prov) = ctx.block_provs.get(pred) {
+                prov = joint_use(prov, *pred_prov);
+                break;
+            }
+
+            cursor = pred;
+        }
+        ctx.block_provs.insert(*block, prov);
+    }
+
+    for (block, preds) in &ssa.cfg {
+        if preds.len() > 1 {
+            assert_eq!(preds.len(), 2);
+            let phi_factors = ctx.phi_factors.entry(*block).or_default();
+            for (pred, cond) in preds {
+                let prov = joint_use(ctx.block_provs[pred], value_to_prov[cond]);
+                phi_factors.push(prov);
+            }
+        }
+    }
+
+    ctx
+}
+
+#[derive(Debug, Default)]
+pub struct CallContexts {
+    pub contexts: HashMap<(Symbol, SSAValueId), Provenance>,
+}
+
+pub fn call_contexts(ssa: &SSA) -> CallContexts {
+    todo!()
 }
