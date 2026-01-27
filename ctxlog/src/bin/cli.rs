@@ -9,7 +9,7 @@ use ctxlog::grammar::ProgramParser;
 use ctxlog::interner::Interner;
 use ctxlog::lattice::{Interval, IsZero};
 use ctxlog::provenance::{
-    FlowContexts, flow_contexts, factor, joint_use, leq, mk_prov, propagate, root_prov,
+    FlowContexts, factor, flow_contexts, joint_use, leq, mk_prov, propagate, root_prov,
 };
 use ctxlog::ssa::{BinaryOp, SSA, SSAValue, dce, naive_ssa_translation, ssa_to_dot};
 use ctxlog::table::{Table, Value};
@@ -23,16 +23,21 @@ pub fn main() -> Result<()> {
         .parse(&mut interner, &imp_program)
         .unwrap();
 
+    let mut ssas = vec![];
+    let mut flows = vec![];
     for func in &ast.funcs {
         let mut terms = naive_ssa_translation(func);
         dce(&mut terms);
         let dom = dominator(&terms.cfg);
-        let ctxs = flow_contexts(&terms, &dom);
-        analysis(&terms, &ctxs);
-        let mut tmp = NamedTempFile::new().unwrap();
-        ssa_to_dot(&terms, &mut tmp)?;
-        Command::new("xdot").arg(tmp.path()).status().unwrap();
+        let flow = flow_contexts(&terms, &dom);
+        ssas.push(terms);
+        flows.push(flow);
     }
+
+    let mut tmp = NamedTempFile::new().unwrap();
+    ssa_to_dot(&ssas, &mut tmp)?;
+    println!("Drawing {}", tmp.path().display());
+    Command::new("xdot").arg(tmp.path()).status().unwrap();
 
     Ok(())
 }

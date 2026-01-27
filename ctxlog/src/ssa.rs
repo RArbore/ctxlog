@@ -337,64 +337,80 @@ pub fn dce(ssa: &mut SSA) {
     }
 }
 
-pub fn ssa_to_dot<W: Write>(ssa: &SSA, w: &mut W) -> Result<()> {
-    writeln!(w, "digraph F{} {{", ssa.name.to_usize())?;
-    writeln!(w, "B0[label=\"0\", shape=\"box\", style=\"rounded\"];")?;
-    for (block, cfg) in &ssa.cfg {
+pub fn ssa_to_dot<W: Write>(ssas: &[SSA], w: &mut W) -> Result<()> {
+    writeln!(w, "digraph G {{")?;
+    writeln!(w, "cluster=true;")?;
+    for ssa in ssas {
+        let func = ssa.name.to_usize();
+        writeln!(w, "subgraph C{} {{", func)?;
+        writeln!(w, "style=filled;")?;
+        writeln!(w, "color=grey85;")?;
+        writeln!(w, "label=\"Function {}\";", func)?;
         writeln!(
             w,
-            "B{}[label=\"{}\", shape=\"box\", style=\"rounded\"];",
-            block, block
+            "B{}_0[label=\"0\", shape=\"box\", style=\"rounded\"];",
+            func
         )?;
-        for (pred, cond) in cfg {
-            writeln!(w, "B{} -> B{};", pred, block)?;
-            if ssa.terms[*cond as usize] != SSAValue::Constant(1) {
-                writeln!(
-                    w,
-                    "N{} -> B{} [style=\"dotted\", constraint=false];",
-                    cond, block
-                )?;
-            }
-        }
-    }
-    for (term_id, term) in ssa.terms() {
-        if term != SSAValue::Tombstone {
+        for (block, cfg) in &ssa.cfg {
             writeln!(
                 w,
-                "N{}[label=\"{}\", color=\"{}\", xlabel=\"{}\"];",
-                term_id,
-                term.symbol(),
-                if ssa.roots.iter().any(|(_, value)| *value == term_id) {
-                    "blue"
-                } else {
-                    "black"
-                },
-                term_id
+                "B{}_{}[label=\"{}\", shape=\"box\", style=\"rounded\"];",
+                func, block, block
             )?;
-        }
-        match term {
-            SSAValue::Constant(_) | SSAValue::Param(_) => {}
-            SSAValue::Unary(_, input) => writeln!(w, "N{} -> N{};", input, term_id)?,
-            SSAValue::Binary(_, lhs, rhs) => {
-                writeln!(w, "N{} -> N{};", lhs, term_id)?;
-                writeln!(w, "N{} -> N{};", rhs, term_id)?;
-            }
-            SSAValue::Phi(block, lhs, rhs) => {
-                writeln!(w, "N{} -> N{};", lhs, term_id)?;
-                writeln!(w, "N{} -> N{};", rhs, term_id)?;
-                writeln!(
-                    w,
-                    "B{} -> N{} [style=\"dashed\", constraint=false];",
-                    block, term_id
-                )?;
-            }
-            SSAValue::Call(_, args) => {
-                for arg in args {
-                    writeln!(w, "N{} -> N{};", arg, term_id)?;
+            for (pred, cond) in cfg {
+                writeln!(w, "B{}_{} -> B{}_{};", func, pred, func, block)?;
+                if ssa.terms[*cond as usize] != SSAValue::Constant(1) {
+                    writeln!(
+                        w,
+                        "N{}_{} -> B{}_{} [style=\"dotted\", constraint=false];",
+                        func, cond, func, block
+                    )?;
                 }
             }
-            SSAValue::Tombstone => {}
         }
+        for (term_id, term) in ssa.terms() {
+            if term != SSAValue::Tombstone {
+                writeln!(
+                    w,
+                    "N{}_{}[label=\"{}\", color=\"{}\", xlabel=\"{}\"];",
+                    func,
+                    term_id,
+                    term.symbol(),
+                    if ssa.roots.iter().any(|(_, value)| *value == term_id) {
+                        "blue"
+                    } else {
+                        "black"
+                    },
+                    term_id
+                )?;
+            }
+            match term {
+                SSAValue::Constant(_) | SSAValue::Param(_) => {}
+                SSAValue::Unary(_, input) => {
+                    writeln!(w, "N{}_{} -> N{}_{};", func, input, func, term_id)?
+                }
+                SSAValue::Binary(_, lhs, rhs) => {
+                    writeln!(w, "N{}_{} -> N{}_{};", func, lhs, func, term_id)?;
+                    writeln!(w, "N{}_{} -> N{}_{};", func, rhs, func, term_id)?;
+                }
+                SSAValue::Phi(block, lhs, rhs) => {
+                    writeln!(w, "N{}_{} -> N{}_{};", func, lhs, func, term_id)?;
+                    writeln!(w, "N{}_{} -> N{}_{};", func, rhs, func, term_id)?;
+                    writeln!(
+                        w,
+                        "B{}_{} -> N{}_{} [style=\"dashed\", constraint=false];",
+                        func, block, func, term_id
+                    )?;
+                }
+                SSAValue::Call(_, args) => {
+                    for arg in args {
+                        writeln!(w, "N{}_{} -> N{}_{};", func, arg, func, term_id)?;
+                    }
+                }
+                SSAValue::Tombstone => {}
+            }
+        }
+        writeln!(w, "}};")?;
     }
     writeln!(w, "}}")
 }

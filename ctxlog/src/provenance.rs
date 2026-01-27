@@ -149,6 +149,15 @@ pub struct CallContexts {
     pub contexts: HashMap<(Symbol, SSAValueId), Provenance>,
 }
 
-pub fn call_contexts(ssa: &SSA) -> CallContexts {
-    todo!()
+pub fn call_contexts(ssas: &[SSA]) -> CallContexts {
+    let mut ctx = CallContexts::default();
+    for ssa in ssas {
+        for (term_id, term) in ssa.terms() {
+            if let SSAValue::Call(_, _) = term {
+                let prov = mk_prov(ctx.contexts.len() as u32);
+                ctx.contexts.insert((ssa.name, term_id), prov);
+            }
+        }
+    }
+    ctx
 }
