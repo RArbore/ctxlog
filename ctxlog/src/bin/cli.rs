@@ -52,8 +52,8 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
     let num_funcs = ssas.len();
 
     let int_intern = Interner::new();
-    let mut iz = Table::new(3);
-    let mut int = Table::new(3);
+    let mut iz = Table::new(4);
+    let mut int = Table::new(4);
     let mut iz_merge = |iz1, iz2| Value::from(IsZero::from(iz1).meet(&IsZero::from(iz2)));
     let mut int_merge = int_intern.intersect();
 
@@ -66,6 +66,7 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
                     name.into(),
                     (*cond).into(),
                     mk_prov(idx as u32).into(),
+                    root_prov().into(),
                     IsZero::NotZero.into(),
                 ],
                 &mut iz_merge,
@@ -87,6 +88,7 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
                                 name.into(),
                                 term_id.into(),
                                 root_prov().into(),
+                                root_prov().into(),
                                 IsZero::Zero.into(),
                             ],
                             &mut iz_merge,
@@ -95,6 +97,7 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
                             &[
                                 name.into(),
                                 term_id.into(),
+                                root_prov().into(),
                                 root_prov().into(),
                                 int_intern.intern(Interval::from(0)).into(),
                             ],
@@ -107,6 +110,7 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
                                 name.into(),
                                 term_id.into(),
                                 root_prov().into(),
+                                root_prov().into(),
                                 IsZero::NotZero.into(),
                             ],
                             &mut iz_merge,
@@ -115,6 +119,7 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
                             &[
                                 name.into(),
                                 term_id.into(),
+                                root_prov().into(),
                                 root_prov().into(),
                                 int_intern.intern(Interval::from(c)).into(),
                             ],
@@ -127,6 +132,7 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
                                 name.into(),
                                 term_id.into(),
                                 root_prov().into(),
+                                root_prov().into(),
                                 IsZero::Top.into(),
                             ],
                             &mut iz_merge,
@@ -135,6 +141,7 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
                             &[
                                 name.into(),
                                 term_id.into(),
+                                root_prov().into(),
                                 root_prov().into(),
                                 int_intern.intern(Interval::top()).into(),
                             ],
@@ -152,15 +159,17 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
                                 for (row2, _) in iz.rows() {
                                     if row2[1] == rhs.into() && row2[0] == name.into() {
                                         let join_iz =
-                                            IsZero::from(row1[3]).join(&IsZero::from(row2[3]));
-                                        let prov = joint_use(
+                                            IsZero::from(row1[4]).join(&IsZero::from(row2[4]));
+                                        let flow_prov = joint_use(
                                             factor(lhs_factor, row1[2].into()),
                                             factor(rhs_factor, row2[2].into()),
                                         );
+                                        let call_prov = joint_use(row1[3].into(), row2[3].into());
                                         new.push([
                                             name.into(),
                                             term_id.into(),
-                                            prov.into(),
+                                            flow_prov.into(),
+                                            call_prov.into(),
                                             join_iz.into(),
                                         ]);
                                     }
@@ -177,15 +186,17 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
                             if row1[1] == lhs.into() && row1[0] == name.into() {
                                 for (row2, _) in int.rows() {
                                     if row2[1] == rhs.into() && row2[0] == name.into() {
-                                        let join_int = int_intern.union()(row1[3], row2[3]);
-                                        let prov = joint_use(
+                                        let join_int = int_intern.union()(row1[4], row2[4]);
+                                        let flow_prov = joint_use(
                                             factor(lhs_factor, row1[2].into()),
                                             factor(rhs_factor, row2[2].into()),
                                         );
+                                        let call_prov = joint_use(row1[3].into(), row2[3].into());
                                         new.push([
                                             name.into(),
                                             term_id.into(),
-                                            prov.into(),
+                                            flow_prov.into(),
+                                            call_prov.into(),
                                             join_int.into(),
                                         ]);
                                     }
@@ -205,14 +216,16 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
                                     name.into(),
                                     term_id.into(),
                                     row[2],
-                                    IsZero::from(row[3]).forward_unary(op).into(),
+                                    row[3],
+                                    IsZero::from(row[4]).forward_unary(op).into(),
                                 ])
                             } else if row[1] == term_id.into() && row[0] == name.into() {
                                 new.push([
                                     name.into(),
                                     input.into(),
                                     row[2],
-                                    IsZero::from(row[3]).backward_unary(op).into(),
+                                    row[3],
+                                    IsZero::from(row[4]).backward_unary(op).into(),
                                 ]);
                             }
                         }
@@ -228,7 +241,8 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
                                     name.into(),
                                     term_id.into(),
                                     row[2],
-                                    int_intern.forward_unary()(row[3], op),
+                                    row[3],
+                                    int_intern.forward_unary()(row[4], op),
                                 ])
                             }
                         }
@@ -243,12 +257,15 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
                             if row1[1] == lhs.into() && row1[0] == name.into() {
                                 for (row2, _) in iz.rows() {
                                     if row2[1] == rhs.into() && row2[0] == name.into() {
+                                        let flow_prov = joint_use(row1[2].into(), row2[2].into());
+                                        let call_prov = joint_use(row1[3].into(), row2[3].into());
                                         new.push([
                                             name.into(),
                                             term_id.into(),
-                                            joint_use(row1[2].into(), row2[2].into()).into(),
-                                            IsZero::from(row1[3])
-                                                .forward_binary(&IsZero::from(row2[3]), op)
+                                            flow_prov.into(),
+                                            call_prov.into(),
+                                            IsZero::from(row1[4])
+                                                .forward_binary(&IsZero::from(row2[4]), op)
                                                 .into(),
                                         ])
                                     }
@@ -265,11 +282,14 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
                             if row1[1] == lhs.into() && row1[0] == name.into() {
                                 for (row2, _) in int.rows() {
                                     if row2[1] == rhs.into() && row2[0] == name.into() {
+                                        let flow_prov = joint_use(row1[2].into(), row2[2].into());
+                                        let call_prov = joint_use(row1[3].into(), row2[3].into());
                                         new.push([
                                             name.into(),
                                             term_id.into(),
-                                            joint_use(row1[2].into(), row2[2].into()).into(),
-                                            int_intern.forward_binary()(row1[3], row2[3], op),
+                                            flow_prov.into(),
+                                            call_prov.into(),
+                                            int_intern.forward_binary()(row1[4], row2[4], op),
                                         ])
                                     }
                                 }
@@ -284,33 +304,41 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
                         if op == BinaryOp::LT {
                             for (iz_row, _) in iz.rows() {
                                 if iz_row[1] == term_id.into()
-                                    && IsZero::from(iz_row[3]).leq(&IsZero::NotZero)
+                                    && IsZero::from(iz_row[4]).leq(&IsZero::NotZero)
                                     && iz_row[0] == name.into()
                                 {
                                     for (rhs_row, _) in int.rows() {
                                         if rhs_row[1] == rhs.into() && rhs_row[0] == name.into() {
-                                            let high = int_intern.get(rhs_row[3].into()).high;
+                                            let flow_prov =
+                                                joint_use(iz_row[2].into(), rhs_row[2].into());
+                                            let call_prov =
+                                                joint_use(iz_row[3].into(), rhs_row[3].into());
+                                            let high = int_intern.get(rhs_row[4].into()).high;
                                             new.push([
                                                 name.into(),
                                                 lhs.into(),
-                                                joint_use(iz_row[2].into(), rhs_row[2].into())
-                                                    .into(),
+                                                flow_prov.into(),
+                                                call_prov.into(),
                                                 int_intern.intern(Interval::high(high - 1)).into(),
                                             ]);
                                         }
                                     }
                                 } else if iz_row[1] == term_id.into()
-                                    && IsZero::from(iz_row[3]).leq(&IsZero::Zero)
+                                    && IsZero::from(iz_row[4]).leq(&IsZero::Zero)
                                     && iz_row[0] == name.into()
                                 {
                                     for (rhs_row, _) in int.rows() {
                                         if rhs_row[1] == rhs.into() && rhs_row[0] == name.into() {
-                                            let low = int_intern.get(rhs_row[3].into()).low;
+                                            let flow_prov =
+                                                joint_use(iz_row[2].into(), rhs_row[2].into());
+                                            let call_prov =
+                                                joint_use(iz_row[3].into(), rhs_row[3].into());
+                                            let low = int_intern.get(rhs_row[4].into()).low;
                                             new.push([
                                                 name.into(),
                                                 lhs.into(),
-                                                joint_use(iz_row[2].into(), rhs_row[2].into())
-                                                    .into(),
+                                                flow_prov.into(),
+                                                call_prov.into(),
                                                 int_intern.intern(Interval::low(low)).into(),
                                             ]);
                                         }
@@ -329,12 +357,13 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
             }
 
             for (row, _) in iz.rows() {
-                if IsZero::from(row[3]) == IsZero::Zero {
+                if IsZero::from(row[4]) == IsZero::Zero {
                     int.insert(
                         &[
                             row[0],
                             row[1],
                             row[2],
+                            row[3],
                             int_intern.intern(Interval::from(0)).into(),
                         ],
                         &mut int_merge,
@@ -365,7 +394,7 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
                     continue;
                 };
 
-                println!("{}: {:?} @ {}", row[1].0, IsZero::from(row[3]), block_id);
+                println!("{}: {:?} @ {}", row[1].0, IsZero::from(row[4]), block_id);
             }
         }
 
@@ -384,7 +413,7 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
                 println!(
                     "{}: {:?} @ {}",
                     row[1].0,
-                    int_intern.get(row[3].into()),
+                    int_intern.get(row[4].into()),
                     block_id
                 );
             }
@@ -395,7 +424,7 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
             let mut agg = IsZero::Top;
             for (row, _) in iz.rows() {
                 if row[1] == (*root).into() && leq(prov, row[2].into()) && row[0] == name.into() {
-                    agg = agg.meet(&IsZero::from(row[3]));
+                    agg = agg.meet(&IsZero::from(row[4]));
                 }
             }
             println!("Root {} at exit {}: {:?}", root, exit, agg);
@@ -406,7 +435,7 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
             let mut agg = Interval::top();
             for (row, _) in int.rows() {
                 if row[1] == (*root).into() && leq(prov, row[2].into()) && row[0] == name.into() {
-                    agg = agg.intersect(&int_intern.get(row[3].into()));
+                    agg = agg.intersect(&int_intern.get(row[4].into()));
                 }
             }
             println!("Root {} at exit {}: {:?}", root, exit, agg);
