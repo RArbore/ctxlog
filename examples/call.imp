@@ -2,8 +2,7 @@ fn fun1() {
 	x = 3;
 	y = x + 1;
 	z = fun2(y);
-	w = fun2(z);
-	return w;
+	return z;
 }
 
 fn fun2(x) {

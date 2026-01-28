@@ -388,6 +388,19 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
                         }
 
                         let ssa = &ssas[sym_to_idx[&sym]];
+                        assert!(ssa.roots.len() == 1);
+                        let root = ssa.roots.iter().next().unwrap().1;
+                        let mut new = vec![];
+                        for (row, _) in int.rows() {
+                            if row[0] == sym.into() && row[1] == (*root).into() && row[2] == root_prov().into() {
+                                let caller_prov = factor(*call_prov, row[3].into());
+                                new.push([name.into(), term_id.into(), root_prov().into(), caller_prov.into(), row[4]]);
+                            }
+                        }
+
+                        for new_row in new {
+                            int.insert(&new_row, &mut int_merge);
+                        }
                     }
                     Tombstone => {}
                 }
