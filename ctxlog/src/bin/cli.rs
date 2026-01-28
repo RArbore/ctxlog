@@ -392,7 +392,7 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
                         let root = ssa.roots.iter().next().unwrap().1;
                         let mut new = vec![];
                         for (row, _) in int.rows() {
-                            if row[0] == sym.into() && row[1] == (*root).into() && row[2] == root_prov().into() {
+                            if row[0] == sym.into() && row[1] == (*root).into() && row[2] == root_prov().into() && leq(row[3].into(), *call_prov) {
                                 let caller_prov = factor(*call_prov, row[3].into());
                                 new.push([name.into(), term_id.into(), root_prov().into(), caller_prov.into(), row[4]]);
                             }
