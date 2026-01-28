@@ -1,10 +1,11 @@
+use std::collections::HashMap;
 use std::io::{Read, Result, stdin};
 use std::process::Command;
 
 use string_interner::symbol::Symbol as _;
 use tempfile::NamedTempFile;
 
-use ctxlog::ast::NameInterner;
+use ctxlog::ast::{NameInterner, Symbol};
 use ctxlog::cfg::dominator;
 use ctxlog::grammar::ProgramParser;
 use ctxlog::interner::Interner;
@@ -13,7 +14,7 @@ use ctxlog::provenance::{
     CallContexts, FlowContexts, call_contexts, factor, flow_contexts, joint_use, leq, mk_prov,
     propagate, root_prov,
 };
-use ctxlog::ssa::{BinaryOp, SSA, SSAValue, dce, naive_ssa_translation, ssa_to_dot};
+use ctxlog::ssa::{BinaryOp, SSA, SSAValue, SSAValueId, dce, naive_ssa_translation, ssa_to_dot};
 use ctxlog::table::{Table, Value};
 
 pub fn main() -> Result<()> {
@@ -50,6 +51,11 @@ pub fn main() -> Result<()> {
 fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
     assert_eq!(ssas.len(), flows.len());
     let num_funcs = ssas.len();
+    let sym_to_idx: HashMap<Symbol, usize> = ssas
+        .iter()
+        .enumerate()
+        .map(|(idx, ssa)| (ssa.name, idx))
+        .collect();
 
     let int_intern = Interner::new();
     let mut iz = Table::new(4);
@@ -351,7 +357,38 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
                             int.insert(&new_row, &mut int_merge);
                         }
                     }
-                    Call(sym, args) => {}
+                    Call(sym, args) => {
+                        let (call_prov, param_ids) = &call.contexts[&(name, term_id)];
+                        let arg_id_to_idx: HashMap<SSAValueId, usize> = args
+                            .iter()
+                            .enumerate()
+                            .map(|(idx, id)| (*id, idx))
+                            .collect();
+
+                        let mut new = vec![];
+                        for (row, _) in int.rows() {
+                            if row[0] == name.into()
+                                && let Some(idx) = arg_id_to_idx.get(&(row[1].into()))
+                                && row[2] == root_prov().into()
+                            {
+                                let param_id = param_ids[*idx];
+                                let callee_prov = joint_use(*call_prov, row[3].into());
+                                new.push([
+                                    sym.into(),
+                                    param_id.into(),
+                                    root_prov().into(),
+                                    callee_prov.into(),
+                                    row[4],
+                                ]);
+                            }
+                        }
+
+                        for new_row in new {
+                            int.insert(&new_row, &mut int_merge);
+                        }
+
+                        let ssa = &ssas[sym_to_idx[&sym]];
+                    }
                     Tombstone => {}
                 }
             }
@@ -372,8 +409,10 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
             }
         }
 
-        propagate(&mut iz, &mut iz_merge);
-        propagate(&mut int, &mut int_merge);
+        propagate(&mut iz, &mut iz_merge, 2, 4);
+        propagate(&mut int, &mut int_merge, 2, 4);
+        propagate(&mut iz, &mut iz_merge, 3, 4);
+        propagate(&mut int, &mut int_merge, 3, 4);
     }
 
     for func in 0..num_funcs {
@@ -394,7 +433,13 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
                     continue;
                 };
 
-                println!("{}: {:?} @ {}", row[1].0, IsZero::from(row[4]), block_id);
+                println!(
+                    "{}: {:?} @ {}, caller {}",
+                    row[1].0,
+                    IsZero::from(row[4]),
+                    block_id,
+                    row[3].0
+                );
             }
         }
 
@@ -411,10 +456,11 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
                 };
 
                 println!(
-                    "{}: {:?} @ {}",
+                    "{}: {:?} @ {}, caller {}",
                     row[1].0,
                     int_intern.get(row[4].into()),
-                    block_id
+                    block_id,
+                    row[3].0
                 );
             }
         }
@@ -423,7 +469,11 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
             let prov = flow.block_provs[exit];
             let mut agg = IsZero::Top;
             for (row, _) in iz.rows() {
-                if row[1] == (*root).into() && leq(prov, row[2].into()) && row[0] == name.into() {
+                if row[1] == (*root).into()
+                    && leq(prov, row[2].into())
+                    && row[0] == name.into()
+                    && row[3].0 == 0
+                {
                     agg = agg.meet(&IsZero::from(row[4]));
                 }
             }
@@ -434,7 +484,11 @@ fn analysis(ssas: &[SSA], flows: &[FlowContexts], call: &CallContexts) {
             let prov = flow.block_provs[exit];
             let mut agg = Interval::top();
             for (row, _) in int.rows() {
-                if row[1] == (*root).into() && leq(prov, row[2].into()) && row[0] == name.into() {
+                if row[1] == (*root).into()
+                    && leq(prov, row[2].into())
+                    && row[0] == name.into()
+                    && row[3].0 == 0
+                {
                     agg = agg.intersect(&int_intern.get(row[4].into()));
                 }
             }

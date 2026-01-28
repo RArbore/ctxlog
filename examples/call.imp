@@ -1,11 +1,15 @@
-fn caller() {
+fn fun1() {
 	x = 3;
 	y = x + 1;
-	z = callee(y);
-	w = callee(z);
+	z = fun2(y);
+	w = fun2(z);
 	return w;
 }
 
-fn callee(x) {
-	return x + 1;
+fn fun2(x) {
+	return fun3(x) + 1;
+}
+
+fn fun3(x) {
+	return x + 7;
 }

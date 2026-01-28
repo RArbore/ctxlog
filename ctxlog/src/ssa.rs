@@ -12,7 +12,7 @@ pub type SSAValueId = u32;
 #[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq)]
 pub enum SSAValue {
     Constant(i32),
-    Param(i32),
+    Param(u32),
     Phi(BlockId, SSAValueId, SSAValueId),
     Unary(UnaryOp, SSAValueId),
     Binary(BinaryOp, SSAValueId, SSAValueId),
@@ -117,7 +117,7 @@ pub fn naive_ssa_translation(func: &FunctionAST) -> SSA {
     };
     for (idx, sym) in func.params.iter().enumerate() {
         ctx.vars
-            .insert(*sym, ssa.add_term(SSAValue::Param(idx as i32)));
+            .insert(*sym, ssa.add_term(SSAValue::Param(idx as u32)));
     }
     ctx.handle_stmt(&mut ssa, &func.body);
     ssa

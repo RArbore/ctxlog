@@ -28,12 +28,14 @@ pub fn factor(a: Provenance, b: Provenance) -> Provenance {
     !a & b
 }
 
-pub fn propagate<M>(table: &mut Table, merge: &mut M)
+pub fn propagate<M>(table: &mut Table, merge: &mut M, prov_column: usize, lat_column: usize)
 where
     M: FnMut(Value, Value) -> Value,
 {
-    let prov_column = table.num_determinant() - 1;
-    let lat_column = table.num_determinant();
+    let rows_equal_other_than_prov = |row1: &[Value], row2: &[Value]| -> bool {
+        &row1[0..prov_column] == &row2[0..prov_column]
+            && &row1[prov_column + 1..lat_column] == &row2[prov_column + 1..lat_column]
+    };
 
     let mut to_modify = HashMap::new();
     loop {
@@ -43,7 +45,7 @@ where
             let mut total_merged = lat1;
             for (row2, _) in table.rows() {
                 let prov2 = row2[prov_column];
-                if &row1[0..prov_column] == &row2[0..prov_column] && leq(prov1.into(), prov2.into()) {
+                if rows_equal_other_than_prov(row1, row2) && leq(prov1.into(), prov2.into()) {
                     let lat2 = row2[lat_column];
                     total_merged = merge(total_merged, lat2);
                 }
@@ -56,7 +58,7 @@ where
             };
             for (row2, _) in table.rows() {
                 let prov2 = row2[prov_column];
-                if &row1[0..prov_column] == &row2[0..prov_column]
+                if rows_equal_other_than_prov(row1, row2)
                     && leq(prov1.into(), prov2.into())
                     && prov1 != prov2
                 {
@@ -146,16 +148,26 @@ pub fn flow_contexts(ssa: &SSA, dom: &DomTree) -> FlowContexts {
 
 #[derive(Debug, Default)]
 pub struct CallContexts {
-    pub contexts: HashMap<(Symbol, SSAValueId), Provenance>,
+    pub contexts: HashMap<(Symbol, SSAValueId), (Provenance, Vec<SSAValueId>)>,
 }
 
 pub fn call_contexts(ssas: &[SSA]) -> CallContexts {
+    let sym_to_idx: HashMap<Symbol, usize> = ssas
+        .iter()
+        .enumerate()
+        .map(|(idx, ssa)| (ssa.name, idx))
+        .collect();
+
     let mut ctx = CallContexts::default();
     for ssa in ssas {
         for (term_id, term) in ssa.terms() {
-            if let SSAValue::Call(_, _) = term {
+            if let SSAValue::Call(sym, args) = term {
                 let prov = mk_prov(ctx.contexts.len() as u32);
-                ctx.contexts.insert((ssa.name, term_id), prov);
+                let callee = &ssas[sym_to_idx[&sym]];
+                let param_ids = (0..args.len())
+                    .map(|idx| callee.intern[&SSAValue::Param(idx as u32)])
+                    .collect();
+                ctx.contexts.insert((ssa.name, term_id), (prov, param_ids));
             }
         }
     }
