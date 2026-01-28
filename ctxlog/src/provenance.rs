@@ -5,7 +5,7 @@ use crate::cfg::{BlockId, DomTree};
 use crate::ssa::{SSA, SSAValue, SSAValueId};
 use crate::table::{Table, Value};
 
-pub type Provenance = Value;
+pub type Provenance = u32;
 
 pub fn mk_prov(id: u32) -> Provenance {
     assert!((id as usize) < size_of::<Provenance>() * 8);
@@ -43,7 +43,7 @@ where
             let mut total_merged = lat1;
             for (row2, _) in table.rows() {
                 let prov2 = row2[prov_column];
-                if &row1[0..prov_column] == &row2[0..prov_column] && leq(prov1, prov2) {
+                if &row1[0..prov_column] == &row2[0..prov_column] && leq(prov1.into(), prov2.into()) {
                     let lat2 = row2[lat_column];
                     total_merged = merge(total_merged, lat2);
                 }
@@ -57,7 +57,7 @@ where
             for (row2, _) in table.rows() {
                 let prov2 = row2[prov_column];
                 if &row1[0..prov_column] == &row2[0..prov_column]
-                    && leq(prov1, prov2)
+                    && leq(prov1.into(), prov2.into())
                     && prov1 != prov2
                 {
                     let lat2 = row2[lat_column];

@@ -8,9 +8,22 @@ use hashbrown::HashTable;
 use hashbrown::hash_table::Entry;
 use rustc_hash::FxHasher;
 
-pub type Value = u32;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Value(pub u32);
 pub type RowId = u64;
 type HashCode = u64;
+
+impl From<Value> for u32 {
+    fn from(value: Value) -> Self {
+        value.0
+    }
+}
+
+impl From<u32> for Value {
+    fn from(value: u32) -> Self {
+        Value(value)
+    }
+}
 
 #[derive(Debug)]
 struct TableEntry {
@@ -42,7 +55,7 @@ struct TableRows<'a> {
 fn hash(determinant: &[Value]) -> HashCode {
     let mut hasher = FxHasher::default();
     for val in determinant {
-        hasher.write_u32(*val);
+        hasher.write_u32(val.0);
     }
     hasher.finish()
 }
@@ -134,7 +147,7 @@ impl Table {
             self.changed = true;
         }
         self.rows.get_row_mut(id)[num_determinant] = new;
-     }
+    }
 
     pub fn get(&self, determinant: &[Value]) -> Option<Value> {
         let num_determinant = self.num_determinant();

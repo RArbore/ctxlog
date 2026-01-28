@@ -335,10 +335,10 @@ impl IsZero {
 impl From<Value> for IsZero {
     fn from(value: Value) -> Self {
         match value {
-            0 => IsZero::Top,
-            1 => IsZero::Zero,
-            2 => IsZero::NotZero,
-            3 => IsZero::Bottom,
+            Value(0) => IsZero::Top,
+            Value(1) => IsZero::Zero,
+            Value(2) => IsZero::NotZero,
+            Value(3) => IsZero::Bottom,
             _ => panic!(),
         }
     }
@@ -347,10 +347,10 @@ impl From<Value> for IsZero {
 impl From<IsZero> for Value {
     fn from(iz: IsZero) -> Self {
         match iz {
-            IsZero::Top => 0,
-            IsZero::Zero => 1,
-            IsZero::NotZero => 2,
-            IsZero::Bottom => 3,
+            IsZero::Top => Value(0),
+            IsZero::Zero => Value(1),
+            IsZero::NotZero => Value(2),
+            IsZero::Bottom => Value(3),
         }
     }
 }

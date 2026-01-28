@@ -3,6 +3,8 @@ use core::hash::Hash;
 use core::marker::PhantomData;
 use std::collections::HashMap;
 
+use crate::table::Value;
+
 #[derive(Debug)]
 pub struct InternId<T> {
     id: u32,
@@ -31,18 +33,18 @@ impl<T> Hash for InternId<T> {
     }
 }
 
-impl<T> From<u32> for InternId<T> {
-    fn from(value: u32) -> Self {
+impl<T> From<Value> for InternId<T> {
+    fn from(value: Value) -> Self {
         InternId {
-            id: value,
+            id: value.into(),
             _phantom: PhantomData,
         }
     }
 }
 
-impl<T> From<InternId<T>> for u32 {
+impl<T> From<InternId<T>> for Value {
     fn from(value: InternId<T>) -> Self {
-        value.id
+        Value(value.id)
     }
 }
 

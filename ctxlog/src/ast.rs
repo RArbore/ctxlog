@@ -1,9 +1,23 @@
-use string_interner::StringInterner;
 use string_interner::backend::StringBackend;
 use string_interner::symbol::SymbolU16;
+use string_interner::{StringInterner, Symbol as _};
+
+use crate::table::Value;
 
 pub type Symbol = SymbolU16;
 pub type NameInterner = StringInterner<StringBackend<Symbol>>;
+
+impl From<Value> for Symbol {
+    fn from(value: Value) -> Self {
+        Symbol::try_from_usize(value.0 as usize).unwrap()
+    }
+}
+
+impl From<Symbol> for Value {
+    fn from(value: Symbol) -> Self {
+        Value(value.to_usize() as u32)
+    }
+}
 
 #[derive(Debug)]
 pub struct ProgramAST {
